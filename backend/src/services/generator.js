@@ -3,7 +3,8 @@ import path from "path";
 import { loadOpenApiDoc } from "./openapiLoader.js";
 import { extractEndpoints } from "./openapiParser.js";
 import { buildGeneratorPrompt, buildRepairPrompt } from "./prompt.js";
-import { ollamaGenerate } from "./ollamaClient.js";
+import { getAIProvider } from "./providers/ai/index.js";
+import { buildDeterministicTestPlan } from "./deterministicPlan.js";
 import { validateTestPlanOrThrow } from "./schemaValidate.js";
 import { buildReport } from "./report.js";
 const SCHEMA_SHAPE_GUIDE = `
@@ -127,26 +128,88 @@ export async function generateTestPlan(payload) {
     schemaText: SCHEMA_SHAPE_GUIDE,
   });
 
-  const model = process.env.OLLAMA_MODEL || "qwen2.5:3b";
+  // ------------------------------
+  // Deterministic-first baseline
+  // ------------------------------
+  let obj = null;
 
-  // 1) generate
-  const raw1 = await ollamaGenerate({ model, prompt, temperature: 0.3 });
-  let obj = tryExtractJsonObject(raw1);
+  const deterministic = buildDeterministicTestPlan({
+    project: projectBlock,
+    options,
+    endpoints: endpointRecords,
+  });
 
-  // 2) repair (one pass) if needed
-  if (!obj) {
-    const repairPrompt = buildRepairPrompt({ badJsonText: raw1, schemaText });
-    const raw2 = await ollamaGenerate({
-      model,
-      prompt: repairPrompt,
-      temperature: 0.2,
-    });
-    obj = tryExtractJsonObject(raw2);
-    if (!obj) {
-      const err = new Error("Model output is not valid JSON after repair pass");
-      err.details = { sample: String(raw2).slice(0, 500) };
-      throw err;
+  // ------------------------------
+  // Optional AI enrichment
+  // ------------------------------
+  const ai = getAIProvider();
+  const wantAI = payload?.ai === true; // UI toggle (default false)
+
+  if (wantAI && ai.enabled) {
+    const model = ai.modelName || process.env.OLLAMA_MODEL || "unknown";
+
+    try {
+      const raw1 = await ai.generate({ prompt, temperature: 0.3 });
+      obj = tryExtractJsonObject(raw1);
+
+      // repair (one pass) if needed
+      if (!obj) {
+        const repairPrompt = buildRepairPrompt({
+          badJsonText: raw1,
+          schemaText,
+        });
+        const raw2 = await ai.generate({
+          prompt: repairPrompt,
+          temperature: 0.2,
+        });
+        obj = tryExtractJsonObject(raw2);
+        if (!obj) throw new Error("AI output not valid JSON after repair pass");
+      }
+
+      // Fill generation metadata if missing (safe enrichment)
+      obj.generation = obj.generation || {};
+      obj.generation.generated_at = obj.generation.generated_at || nowIso();
+      obj.generation.generator_version =
+        obj.generation.generator_version || "v1";
+      obj.generation.model = obj.generation.model || model;
+      obj.generation.prompt_version = obj.generation.prompt_version || "p1";
+      obj.generation.rag_enabled = obj.generation.rag_enabled ?? false;
+
+      // Ensure project matches selection (safe)
+      obj.project = obj.project || projectBlock;
+      obj.project.project_id =
+        obj.project.project_id || projectBlock.project_id;
+      obj.project.project_name =
+        obj.project.project_name || projectBlock.project_name;
+      obj.project.env = obj.project.env || projectBlock.env;
+      obj.project.base_url_var =
+        obj.project.base_url_var || projectBlock.base_url_var;
+      obj.project.auth_profile =
+        obj.project.auth_profile || projectBlock.auth_profile;
+      obj.project.auth_vars = Array.isArray(obj.project.auth_vars)
+        ? obj.project.auth_vars
+        : projectBlock.auth_vars;
+    } catch (e) {
+      // IMPORTANT: never fail generator because AI failed
+      obj = null;
+      deterministic.generation = deterministic.generation || {};
+      deterministic.generation.ai_skipped = false;
+      deterministic.generation.ai_provider = ai.name;
+      deterministic.generation.ai_error = String(e?.message || e);
     }
+  }
+
+  // If AI disabled/unavailable/failed -> use deterministic
+  if (!obj) {
+    obj = deterministic;
+    obj.generation = obj.generation || {};
+    obj.generation.ai_skipped = wantAI ? false : true;
+    obj.generation.ai_provider = ai.name;
+    obj.generation.generated_at = obj.generation.generated_at || nowIso();
+    obj.generation.generator_version = obj.generation.generator_version || "v1";
+    obj.generation.model = obj.generation.model || "deterministic";
+    obj.generation.prompt_version = obj.generation.prompt_version || "p1";
+    obj.generation.rag_enabled = obj.generation.rag_enabled ?? false;
   }
 
   // Fill generation metadata if missing (safe enrichment)

@@ -20,7 +20,7 @@ export async function ollamaGenerate({
         stream: false,
         options: {
           temperature,
-          num_predict: 800, // hard cap output tokens (prevents long generations)
+          num_predict: 800,
           top_p: 0.9,
         },
         stop: ["\n\n\n", "```"],
