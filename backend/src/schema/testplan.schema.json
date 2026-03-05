@@ -1,0 +1,194 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://api-testops.local/schemas/testplan.schema.json",
+  "title": "TestPlan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "generation", "suites"],
+  "properties": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "project_name",
+        "env",
+        "base_url_var",
+        "auth_profile",
+        "auth_vars"
+      ],
+      "properties": {
+        "project_id": { "type": "string", "minLength": 1 },
+        "project_name": { "type": "string", "minLength": 1 },
+        "env": { "type": "string", "minLength": 1 },
+        "base_url_var": { "type": "string", "minLength": 1 },
+        "auth_profile": { "type": "string", "minLength": 1 },
+        "auth_vars": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      }
+    },
+
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generated_at", "generator_version", "model"],
+      "properties": {
+        "generated_at": { "type": "string", "minLength": 1 },
+        "generator_version": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "prompt_version": { "type": "string" },
+        "rag_enabled": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "suites": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Suite" }
+    }
+  },
+
+  "$defs": {
+    "EndpointRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "RequestShape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "headers"],
+      "properties": {
+        "query": {
+          "type": "object",
+          "additionalProperties": true,
+          "default": {}
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": true,
+          "default": {}
+        },
+        "body": {}
+      }
+    },
+
+    "TestCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "type",
+        "priority",
+        "method",
+        "path",
+        "request",
+        "steps",
+        "expected",
+        "assertions",
+        "needs_review"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+
+        "type": {
+          "type": "string",
+          "enum": ["smoke", "contract", "negative", "auth", "performance"]
+        },
+
+        "priority": {
+          "type": "string",
+          "enum": ["P0", "P1", "P2", "P3"]
+        },
+
+        "severity": {
+          "type": "string",
+          "enum": ["blocker", "critical", "major", "minor"]
+        },
+
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+
+        "path": { "type": "string", "minLength": 1 },
+
+        "preconditions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+
+        "request": { "$ref": "#/$defs/RequestShape" },
+
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+
+        "expected": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+
+        "assertions": {
+          "type": "array",
+          "items": {},
+          "default": []
+        },
+
+        "needs_review": { "type": "boolean" },
+
+        "review_notes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      }
+    },
+
+    "Suite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suite_id", "name", "endpoints", "cases"],
+      "properties": {
+        "suite_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+
+        "endpoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/EndpointRef" }
+        },
+
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/TestCase" }
+        }
+      }
+    }
+  }
+}

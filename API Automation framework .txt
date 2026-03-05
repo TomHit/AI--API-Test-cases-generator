@@ -1,0 +1,97 @@
+Setup API-Automation project
+
+1. create project
+   select empty project , check the git repository checkbox
+   
+2. go to terminal in intellij
+  npm init -y    #create package,json
+  
+  npm i -D newman newman-reporter-htmlextra  # add newman dependencies
+  
+3. create the folders 
+
+Collections,scripts,build,report etc..
+
+axios mocha chai
+
+npm init -y
+npm i axios
+npm i -D mocha chai 
+Open package.json and replace the "scripts" section with this:
+"scripts": {
+  "test": "mocha \"src/tests/**/*.spec.js\" --timeout 30000",
+  "smoke": "mocha \"src/tests/smoke/**/*.spec.js\" --timeout 30000",
+  "contract": "mocha \"src/tests/contract/**/*.spec.js\" --timeout 30000",
+  "integration": "mocha \"src/tests/integration/**/*.spec.js\" --timeout 60000",
+  "regression": "mocha \"src/tests/regression/**/*.spec.js\" --timeout 60000"
+}
+
+
+
+
+Install dotenv (to load .env)
+npm i dotenv
+
+
+mocha-junit-reporter mochawesome mochawesome-merge mochawesome-report-generator csv-parse
+
+mocha work chaiv4.3.10 perfectly 
+
+npm uninstall chai
+npm install chai@4.3.10 --save-dev
+
+RUN scripts
+npm run test:html
+
+
+
+
+
+issue: 
+
+
+Error [ERR_REQUIRE_ESM]: require() of ES
+
+fix add "type": "module" inside package.json
+
+{
+  "name": "api-automation",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "smoke": "mocha \"src/tests/smoke/**/*.spec.js\" --timeout 30000"
+  }
+}
+
+replace require : 
+
+const { expect } = require("chai");
+const { apiGet } = require("../../client/httpClient");
+
+after fix:
+
+const { expect } = require("chai");
+const { apiGet } = require("../../client/httpClient");
+
+require() = CommonJS
+
+import = ES Modules
+
+So once you switch project to ESM, you must change:
+
+const x = require("x");
+module.exports = ...
+
+to 
+
+import x from "x";
+export ...
+
+
+
+frontend setup
+
+install react:
+
+npx create-react-app
+npx create-react-app frontend

@@ -1,0 +1,4 @@
+url,method
+https://app.xautrendlab.com/_api/trend/opportunities?tf=H1,POST
+https://app.xautrendlab.com/_api/trend/opportunities?tf=H1,GET
+https://app.xautrendlab.com/_api/trend/opportunities?tf=H1,Query
