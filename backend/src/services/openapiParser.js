@@ -96,7 +96,14 @@ export function extractEndpoints(openapiDoc) {
         tags,
         summary: summary ? String(summary).slice(0, 120) : "",
         params,
+
+        // summarized response for UI/debug
         response: resp,
+
+        // raw OpenAPI data for generator/template engine
+        responses: op?.responses || {},
+        requestBody: op?.requestBody || null,
+        security: op?.security || openapiDoc?.security || [],
       });
     }
   }

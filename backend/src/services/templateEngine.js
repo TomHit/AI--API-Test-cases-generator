@@ -16,36 +16,44 @@ import { makeAuthMissingCredentialsTemplate } from "../templates/authTemplates.j
  * Helper: check if endpoint has a success response
  */
 function hasSuccessResponse(endpoint) {
-  const responses = endpoint?.responses || endpoint?.response || null;
-  if (!responses) return false;
+  if (endpoint?.responses && typeof endpoint.responses === "object") {
+    return Object.keys(endpoint.responses).some((k) =>
+      /^2\d\d$/.test(String(k)),
+    );
+  }
 
-  const keys = Object.keys(responses || {});
-  return keys.some((k) => /^2\d\d$/.test(String(k)));
+  // fallback for summarized parser shape: { status, contentType, schemaSummary }
+  const status = endpoint?.response?.status;
+  return typeof status === "number" && status >= 200 && status < 300;
 }
 
 /**
  * Helper: check if response likely has schema
  */
 function hasResponseSchema(endpoint) {
-  const responses = endpoint?.responses || endpoint?.response || null;
-  if (!responses) return false;
+  if (endpoint?.responses && typeof endpoint.responses === "object") {
+    for (const [code, val] of Object.entries(endpoint.responses)) {
+      if (!/^2\d\d$/.test(String(code))) continue;
 
-  for (const [code, val] of Object.entries(responses)) {
-    if (!/^2\d\d$/.test(String(code))) continue;
-
-    const content = val?.content || {};
-    const appJson = content["application/json"];
-    if (appJson?.schema) return true;
+      const content = val?.content || {};
+      const appJson =
+        content["application/json"] || content["application/*+json"];
+      if (appJson?.schema) return true;
+    }
   }
 
-  return false;
+  // fallback for summarized parser shape
+  return !!endpoint?.response?.schemaSummary;
 }
 
 /**
  * Helper: check if request body schema exists
  */
 function hasRequestBodySchema(endpoint) {
-  return !!endpoint?.requestBody?.content?.["application/json"]?.schema;
+  const content = endpoint?.requestBody?.content || {};
+  return !!(
+    content["application/json"]?.schema || content["application/*+json"]?.schema
+  );
 }
 
 /**
@@ -70,6 +78,7 @@ function hasSecurity(endpoint) {
 
 /**
  * Generate all applicable test cases for one endpoint
+ * Max 1 per included type, max 3 total
  */
 export function generateCasesForEndpoint(endpoint, options = {}) {
   const include = Array.isArray(options?.include)
@@ -78,49 +87,32 @@ export function generateCasesForEndpoint(endpoint, options = {}) {
 
   const cases = [];
 
-  // -----------------------------
-  // CONTRACT / SMOKE templates
-  // -----------------------------
-  if (
-    (include.includes("smoke") || include.includes("contract")) &&
-    hasSuccessResponse(endpoint)
-  ) {
+  // SMOKE
+  if (include.includes("smoke") && hasSuccessResponse(endpoint)) {
     cases.push(makeContractSuccessTemplate(endpoint));
   }
 
-  if (include.includes("contract") && hasResponseSchema(endpoint)) {
-    cases.push(makeContractRequiredFieldsTemplate(endpoint));
+  // CONTRACT
+  if (include.includes("contract")) {
+    if (hasResponseSchema(endpoint)) {
+      cases.push(makeContractRequiredFieldsTemplate(endpoint));
+    } else if (hasSuccessResponse(endpoint)) {
+      cases.push(makeContractSuccessTemplate(endpoint));
+    } else if (hasRequestBodySchema(endpoint)) {
+      cases.push(makeSchemaRequestBodyTemplate(endpoint));
+    }
   }
 
-  // -----------------------------
-  // SCHEMA templates
-  // -----------------------------
-  if (include.includes("contract") && hasResponseSchema(endpoint)) {
-    cases.push(makeSchemaResponseTemplate(endpoint));
+  // NEGATIVE
+  if (include.includes("negative")) {
+    if (hasRequiredQuery(endpoint)) {
+      cases.push(makeNegativeMissingRequiredQueryTemplate(endpoint));
+    } else if (hasSecurity(endpoint)) {
+      cases.push(makeAuthMissingCredentialsTemplate(endpoint));
+    }
   }
 
-  if (include.includes("contract") && hasRequestBodySchema(endpoint)) {
-    cases.push(makeSchemaRequestBodyTemplate(endpoint));
-  }
-
-  // -----------------------------
-  // NEGATIVE templates
-  // -----------------------------
-  if (include.includes("negative") && hasRequiredQuery(endpoint)) {
-    cases.push(makeNegativeMissingRequiredQueryTemplate(endpoint));
-  }
-
-  // -----------------------------
-  // AUTH templates
-  // -----------------------------
-  if (
-    (include.includes("negative") || include.includes("auth")) &&
-    hasSecurity(endpoint)
-  ) {
-    cases.push(makeAuthMissingCredentialsTemplate(endpoint));
-  }
-
-  return cases;
+  return cases.slice(0, 3);
 }
 
 /**
