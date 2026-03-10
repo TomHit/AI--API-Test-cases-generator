@@ -12,7 +12,7 @@ const SCHEMA_SHAPE_GUIDE = `
 Return ONLY JSON.
 Top keys: project, generation, suites.
 Each suite: suite_id,name,endpoints[],cases[].
-Each case: id,title,module,test_type,priority,objective,preconditions[],test_data{path_params,query_params,headers,request_body},steps[],expected_results[],api_details{method,path},validation_focus[],references[],needs_review,review_notes.
+Each case: id,title,module,test_type,priority,objective,preconditions[],test_data{path_params,query_params,headers,cookies,request_body},steps[],expected_results[],api_details{method,path},validation_focus[],references[],needs_review,review_notes.
 Rules: method uppercase. test_type must be one of contract/schema/negative/auth. review_notes must be a string. Max 4 cases per endpoint.
 `.trim();
 

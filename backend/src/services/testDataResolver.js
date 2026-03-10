@@ -76,10 +76,19 @@ function fieldNameHints(fieldName = "") {
   if (n === "url" || n.endsWith("_url") || n.includes("website")) {
     return "https://example.com";
   }
+  if (n === "authorization" || n === "auth") return "Bearer <token>";
+  if (n === "authorization" || n === "auth") return "Bearer <token>";
+  if (n.includes("bearer")) return "Bearer <token>";
   if (n === "token" || n.includes("token")) return "sample-token-123";
   if (n === "api_key" || n === "apikey" || n.includes("api_key")) {
     return "sample-api-key-123";
   }
+  if (n.includes("session")) return "sample-session-token";
+  if (n.includes("csrf")) return "csrf-token-123";
+  if (n === "x-device-token" || n === "device-token") {
+    return "sample-device-token";
+  }
+  if (n === "x-device-id") return "dev_123";
   if (n === "otp" || n.includes("otp")) return "123456";
   if (n === "code" || n.endsWith("_code")) return "CODE123";
   if (n === "status") return "active";
@@ -174,17 +183,38 @@ function resolveValidPrimitive(schema = {}, fieldName = "") {
   }
 
   switch (schema.type) {
-    case "integer":
-      return {
-        value: Number.isFinite(schema.minimum) ? schema.minimum : 1,
-        source: "type",
-      };
+    case "integer": {
+      if (Number.isFinite(schema.minimum) && Number.isFinite(schema.maximum)) {
+        return {
+          value: Math.floor((schema.minimum + schema.maximum) / 2),
+          source: "range_mid",
+        };
+      }
+      if (Number.isFinite(schema.minimum)) {
+        return { value: schema.minimum, source: "minimum" };
+      }
+      if (Number.isFinite(schema.maximum)) {
+        return { value: schema.maximum - 1, source: "maximum" };
+      }
+      return { value: 1, source: "type" };
+    }
 
     case "number":
-      return {
-        value: Number.isFinite(schema.minimum) ? schema.minimum : 1.5,
-        source: "type",
-      };
+    case "number": {
+      if (Number.isFinite(schema.minimum) && Number.isFinite(schema.maximum)) {
+        return {
+          value: (schema.minimum + schema.maximum) / 2,
+          source: "range_mid",
+        };
+      }
+      if (Number.isFinite(schema.minimum)) {
+        return { value: schema.minimum, source: "minimum" };
+      }
+      if (Number.isFinite(schema.maximum)) {
+        return { value: schema.maximum - 0.1, source: "maximum" };
+      }
+      return { value: 1.5, source: "type" };
+    }
 
     case "boolean":
       return { value: true, source: "type" };
@@ -491,6 +521,28 @@ export function resolveEndpointTestData(endpoint) {
         resolved = resolveValidValue(schema, field?.name);
       }
 
+      // Path params should be realistic values for manual execution
+      if (group.key === "path" && directExample === undefined) {
+        if (schema.format === "uuid") {
+          resolved = {
+            value: "123e4567-e89b-12d3-a456-426614174000",
+            source: "path_uuid_sample",
+          };
+        } else if (schema.type === "integer") {
+          resolved = {
+            value: 123,
+            source: "path_integer_sample",
+          };
+        } else if (schema.type === "string" && resolved.value === "sample") {
+          resolved = {
+            value: field?.name?.toLowerCase().includes("id")
+              ? "123"
+              : "sample-id",
+            source: "path_string_sample",
+          };
+        }
+      }
+
       result.valid[group.key][field.name] = resolved.value;
       result.sourceMap[`${group.key}.${field.name}`] = resolved.source;
     }
@@ -532,22 +584,6 @@ export function resolveEndpointTestData(endpoint) {
   for (const group of groups) {
     for (const field of group.fields) {
       const schema = field?.schema || {};
-      // Path params should be realistic values
-      if (group.key === "path") {
-        if (schema.format === "uuid") {
-          result.valid[group.key][field.name] =
-            "123e4567-e89b-12d3-a456-426614174000";
-          result.sourceMap[`${group.key}.${field.name}`] = "path_uuid_sample";
-          continue;
-        }
-
-        if (schema.type === "integer") {
-          result.valid[group.key][field.name] = 123;
-          result.sourceMap[`${group.key}.${field.name}`] =
-            "path_integer_sample";
-          continue;
-        }
-      }
       const fieldName = field.name;
       const validValue = result.valid[group.key][fieldName];
 
@@ -656,6 +692,7 @@ export function resolveEndpointTestData(endpoint) {
           path_params: clone(result.valid.path),
           query_params: clone(result.valid.query),
           headers: clone(result.valid.headers),
+          cookies: clone(result.valid.cookies),
           request_body: clone(bodyNeg.requestBody),
         },
       });

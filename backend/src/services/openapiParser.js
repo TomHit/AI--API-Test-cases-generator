@@ -203,7 +203,7 @@ function normalizeParam(p, openapiDoc) {
   };
 }
 
-function buildSyntheticAuthHeaders(op, openapiDoc) {
+function buildSyntheticAuthParams(op, openapiDoc) {
   const out = [];
   const securityReqs = Array.isArray(op?.security)
     ? op.security
@@ -221,6 +221,7 @@ function buildSyntheticAuthHeaders(op, openapiDoc) {
       const scheme = schemes?.[schemeName];
       if (!isObject(scheme)) continue;
 
+      // Bearer token
       if (scheme.type === "http" && scheme.scheme === "bearer") {
         const key = "header:Authorization";
         if (seen.has(key)) continue;
@@ -231,39 +232,48 @@ function buildSyntheticAuthHeaders(op, openapiDoc) {
           in: "header",
           required: true,
           description: `Auth header from security scheme '${schemeName}'`,
-          style: undefined,
-          explode: undefined,
-          deprecated: false,
-          allowEmptyValue: false,
           example: "Bearer <token>",
           schema: { type: "string" },
           schemaSummary: { type: "string" },
           synthetic: true,
           authScheme: schemeName,
+          authType: "bearer",
         });
-      } else if (
-        scheme.type === "apiKey" &&
-        scheme.in === "header" &&
-        scheme.name
-      ) {
-        const key = `header:${scheme.name}`;
+        continue;
+      }
+
+      // API key authentication
+      if (scheme.type === "apiKey") {
+        const paramName = scheme.name;
+        const paramIn = scheme.in;
+
+        if (!paramName || !["header", "cookie", "query"].includes(paramIn)) {
+          continue;
+        }
+
+        const key = `${paramIn}:${paramName}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
+        let example = `<${paramName}_value>`;
+        if (String(paramName).toLowerCase().includes("token")) {
+          example = "sample-token-123";
+        }
+        if (String(paramName).toLowerCase().includes("key")) {
+          example = "sample-api-key-123";
+        }
+
         out.push({
-          name: scheme.name,
-          in: "header",
+          name: paramName,
+          in: paramIn,
           required: true,
-          description: `API key header from security scheme '${schemeName}'`,
-          style: undefined,
-          explode: undefined,
-          deprecated: false,
-          allowEmptyValue: false,
-          example: `<${scheme.name}_value>`,
+          description: `API key ${paramIn} from security scheme '${schemeName}'`,
+          example,
           schema: { type: "string" },
           schemaSummary: { type: "string" },
           synthetic: true,
           authScheme: schemeName,
+          authType: "apiKey",
         });
       }
     }
@@ -271,7 +281,6 @@ function buildSyntheticAuthHeaders(op, openapiDoc) {
 
   return out;
 }
-
 function parseParams(pathItem, op, openapiDoc) {
   const out = {
     query: [],
@@ -299,12 +308,15 @@ function parseParams(pathItem, op, openapiDoc) {
     out[n.in].push(n);
   }
 
-  const authHeaders = buildSyntheticAuthHeaders(op, openapiDoc);
-  for (const h of authHeaders) {
-    const key = `${h.in}:${h.name}`;
+  const authParams = buildSyntheticAuthParams(op, openapiDoc);
+
+  for (const p of authParams) {
+    const key = `${p.in}:${p.name}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.header.push(h);
+
+    if (!out[p.in]) out[p.in] = [];
+    out[p.in].push(p);
   }
 
   return out;
