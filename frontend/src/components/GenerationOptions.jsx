@@ -15,6 +15,7 @@ export default function GenerationOptions({ options, onChange }) {
     onChange({
       ...options,
       include: ["contract", "schema"],
+      generation_mode: "strict",
     });
   }
 
@@ -81,6 +82,39 @@ export default function GenerationOptions({ options, onChange }) {
             }
             placeholder="device"
           />
+        </div>
+      </div>
+      <div>
+        <div style={styles.label}>Generation Mode</div>
+        <div style={styles.row}>
+          <label style={styles.chk}>
+            <input
+              type="radio"
+              name="generation_mode"
+              checked={(options.generation_mode || "balanced") === "balanced"}
+              onChange={() =>
+                onChange({ ...options, generation_mode: "balanced" })
+              }
+            />
+            Balanced
+          </label>
+
+          <label style={styles.chk}>
+            <input
+              type="radio"
+              name="generation_mode"
+              checked={(options.generation_mode || "balanced") === "strict"}
+              onChange={() =>
+                onChange({ ...options, generation_mode: "strict" })
+              }
+            />
+            Strict
+          </label>
+        </div>
+
+        <div style={styles.help}>
+          Balanced = generate for ready + partial endpoints. Strict = generate
+          only for spec-complete ready endpoints.
         </div>
       </div>
 

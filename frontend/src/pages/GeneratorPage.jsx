@@ -20,10 +20,11 @@ function summarizeTestData(testData) {
   const pathCount = Object.keys(testData.path_params || {}).length;
   const queryCount = Object.keys(testData.query_params || {}).length;
   const headerCount = Object.keys(testData.headers || {}).length;
+  const cookieCount = Object.keys(testData.cookies || {}).length;
   const hasBody =
     testData.request_body !== undefined && testData.request_body !== null;
 
-  return `path:${pathCount} query:${queryCount} headers:${headerCount} body:${hasBody ? "yes" : "no"}`;
+  return `path:${pathCount} query:${queryCount} headers:${headerCount} cookies:${cookieCount} body:${hasBody ? "yes" : "no"}`;
 }
 
 function deriveTableRows(testplan) {
@@ -91,6 +92,17 @@ function buildCsvFromTable(rows) {
   return lines.join("\n");
 }
 
+function getSpecSummary(specQuality) {
+  return specQuality?.summary || null;
+}
+
+function getPrimaryIssueText(endpointResult) {
+  if (!endpointResult?.issues || endpointResult.issues.length === 0) return "-";
+  return (
+    endpointResult.issues[0]?.message || endpointResult.issues[0]?.code || "-"
+  );
+}
+
 export default function GeneratorPage({ projectId, onBack }) {
   const [endpointsLoading, setEndpointsLoading] = useState(true);
   const [endpointsErr, setEndpointsErr] = useState("");
@@ -108,12 +120,17 @@ export default function GeneratorPage({ projectId, onBack }) {
     guidance: "",
     ai: false,
     spec_source: "",
+    generation_mode: "balanced",
   });
 
   const [run, setRun] = useState({
     run_id: "",
     status: "idle",
     error: null,
+    generation_mode: "balanced",
+    spec_quality: null,
+    blocked_endpoints: [],
+    eligible_endpoints: [],
     testplan: null,
     report: null,
   });
@@ -187,6 +204,7 @@ export default function GeneratorPage({ projectId, onBack }) {
       endpoints: endpointRefs,
       ai: !!options.ai,
       spec_source: options.spec_source || "",
+      generation_mode: options.generation_mode || "balanced",
     };
 
     try {
@@ -209,6 +227,14 @@ export default function GeneratorPage({ projectId, onBack }) {
         run_id: data.run_id || "",
         status: "done",
         error: null,
+        generation_mode: data.generation_mode || "balanced",
+        spec_quality: data.spec_quality || null,
+        blocked_endpoints: Array.isArray(data.blocked_endpoints)
+          ? data.blocked_endpoints
+          : [],
+        eligible_endpoints: Array.isArray(data.eligible_endpoints)
+          ? data.eligible_endpoints
+          : [],
         testplan: data.testplan || null,
         report: data.report || null,
       });
@@ -218,6 +244,9 @@ export default function GeneratorPage({ projectId, onBack }) {
         ...r,
         status: "error",
         error: { message: e.message || String(e) },
+        spec_quality: null,
+        blocked_endpoints: [],
+        eligible_endpoints: [],
       }));
     }
   }
@@ -293,7 +322,88 @@ export default function GeneratorPage({ projectId, onBack }) {
           <div style={styles.topRight}>
             <div style={styles.panelTitle}>Options</div>
             <GenerationOptions options={options} onChange={setOptions} />
+            {run.spec_quality && (
+              <div style={{ marginTop: 10, ...styles.note }}>
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>
+                  Spec Analysis
+                </div>
 
+                <div style={styles.kpiRow}>
+                  <div style={styles.kpiBox}>
+                    <div style={styles.kpiLabel}>Mode</div>
+                    <div style={styles.kpiValue}>{run.generation_mode}</div>
+                  </div>
+
+                  <div style={styles.kpiBox}>
+                    <div style={styles.kpiLabel}>Health</div>
+                    <div style={styles.kpiValue}>
+                      {run.spec_quality?.spec_health_score ?? "—"}
+                    </div>
+                  </div>
+
+                  <div style={styles.kpiBox}>
+                    <div style={styles.kpiLabel}>Ready</div>
+                    <div style={styles.kpiValue}>
+                      {getSpecSummary(run.spec_quality)?.ready ?? "—"}
+                    </div>
+                  </div>
+
+                  <div style={styles.kpiBox}>
+                    <div style={styles.kpiLabel}>Partial</div>
+                    <div style={styles.kpiValue}>
+                      {getSpecSummary(run.spec_quality)?.partial ?? "—"}
+                    </div>
+                  </div>
+
+                  <div style={styles.kpiBox}>
+                    <div style={styles.kpiLabel}>Blocked</div>
+                    <div style={styles.kpiValue}>
+                      {getSpecSummary(run.spec_quality)?.blocked ?? "—"}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 10, fontSize: 13 }}>
+                  <b>Total endpoints:</b>{" "}
+                  {getSpecSummary(run.spec_quality)?.total_endpoints ?? "—"}
+                  {" · "}
+                  <b>Eligible:</b> {run.eligible_endpoints?.length ?? 0}
+                  {" · "}
+                  <b>Blocked for mode:</b> {run.blocked_endpoints?.length ?? 0}
+                </div>
+
+                {run.blocked_endpoints?.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                      Blocked / Excluded Endpoints
+                    </div>
+
+                    <div style={styles.issueList}>
+                      {run.blocked_endpoints.map((ep, i) => (
+                        <div
+                          key={`${ep.endpoint_id || i}-${i}`}
+                          style={styles.issueCard}
+                        >
+                          <div style={styles.issueTitle}>
+                            {ep.method || ep.endpoint_id?.split(" ")[0] || "—"}{" "}
+                            {ep.path ||
+                              ep.endpoint_id?.split(" ").slice(1).join(" ") ||
+                              ""}
+                          </div>
+                          <div style={styles.issueMeta}>
+                            status: {ep.status || "blocked"} · issues:{" "}
+                            {ep.issues_count ?? ep.issues?.length ?? 0}
+                          </div>
+                          <div style={styles.issueText}>
+                            {getPrimaryIssueText(ep)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ marginTop: 10 }}>
               <ExportButtons
                 disabled={!run.testplan}
@@ -465,5 +575,48 @@ const styles = {
     overflow: "auto",
     maxHeight: 520,
     fontSize: 12,
+  },
+  kpiRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))",
+    gap: 8,
+    marginTop: 8,
+  },
+  kpiBox: {
+    border: "1px solid #e5e5e5",
+    borderRadius: 10,
+    padding: 10,
+    background: "#fff",
+  },
+  kpiLabel: {
+    fontSize: 12,
+    opacity: 0.7,
+    marginBottom: 4,
+  },
+  kpiValue: {
+    fontSize: 16,
+    fontWeight: 800,
+  },
+  issueList: {
+    display: "grid",
+    gap: 8,
+  },
+  issueCard: {
+    border: "1px solid #ffd6a5",
+    background: "#fff8ef",
+    borderRadius: 10,
+    padding: 10,
+  },
+  issueTitle: {
+    fontWeight: 700,
+    marginBottom: 4,
+  },
+  issueMeta: {
+    fontSize: 12,
+    opacity: 0.7,
+    marginBottom: 4,
+  },
+  issueText: {
+    fontSize: 13,
   },
 };

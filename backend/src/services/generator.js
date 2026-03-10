@@ -287,6 +287,38 @@ async function buildDeterministicTestPlan({
     suites,
   };
 }
+function filterGeneratedPlanToEligibleEndpoints(plan, eligibleEndpoints) {
+  if (!plan || !Array.isArray(plan.suites)) return plan;
+
+  const eligibleSet = new Set(
+    (eligibleEndpoints || []).map((e) => endpointKey(e.method, e.path)),
+  );
+
+  for (const suite of plan.suites) {
+    suite.endpoints = ensureArray(suite.endpoints).filter((e) =>
+      eligibleSet.has(endpointKey(e.method, e.path)),
+    );
+
+    suite.cases = ensureArray(suite.cases).filter((testCase) => {
+      const method =
+        testCase?.api_details?.method ||
+        testCase?.method ||
+        testCase?.request?.method ||
+        "GET";
+
+      const path =
+        testCase?.api_details?.path ||
+        testCase?.path ||
+        testCase?.request?.path ||
+        "";
+
+      return eligibleSet.has(endpointKey(method, path));
+    });
+  }
+
+  plan.suites = plan.suites.filter((s) => ensureArray(s.cases).length > 0);
+  return plan;
+}
 
 export async function generateTestPlan(payload) {
   const project_id = payload?.project_id;
@@ -488,6 +520,7 @@ export async function generateTestPlan(payload) {
     : projectBlock.auth_vars;
 
   obj = enrichSuitesWithCaseIds(obj, allEndpoints);
+  obj = filterGeneratedPlanToEligibleEndpoints(obj, eligibleEndpointRecords);
 
   console.log(
     "SUITE CASE COUNTS:",
