@@ -91,6 +91,10 @@ app.post("/api/generate", async (req, res) => {
 
     res.json({
       run_id: out.run_id,
+      generation_mode: out.generation_mode,
+      spec_quality: out.spec_quality,
+      blocked_endpoints: out.blocked_endpoints,
+      eligible_endpoints: out.eligible_endpoints,
       testplan: out.testplan,
       report: out.report,
       csv,

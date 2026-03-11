@@ -140,6 +140,7 @@ export default function GeneratorPage({ projectId, onBack }) {
     generation_mode: "balanced",
     spec_quality: null,
     blocked_endpoints: [],
+    partial_endpoints: [],
     eligible_endpoints: [],
     testplan: null,
     report: null,
@@ -205,6 +206,7 @@ export default function GeneratorPage({ projectId, onBack }) {
       error: null,
       spec_quality: null,
       blocked_endpoints: [],
+      partial_endpoints: [],
       eligible_endpoints: [],
       testplan: null,
       report: null,
@@ -235,6 +237,7 @@ export default function GeneratorPage({ projectId, onBack }) {
         },
         body: JSON.stringify(payload),
       });
+
       const text = await res.text();
       const data = safeJsonParse(text);
 
@@ -255,12 +258,16 @@ export default function GeneratorPage({ projectId, onBack }) {
         blocked_endpoints: Array.isArray(data.blocked_endpoints)
           ? data.blocked_endpoints
           : [],
+        partial_endpoints: Array.isArray(data.partial_endpoints)
+          ? data.partial_endpoints
+          : [],
         eligible_endpoints: Array.isArray(data.eligible_endpoints)
           ? data.eligible_endpoints
           : [],
         testplan: data.testplan || null,
         report: data.report || null,
       });
+
       setActiveTab("table");
     } catch (e) {
       setRun((r) => ({
@@ -275,6 +282,9 @@ export default function GeneratorPage({ projectId, onBack }) {
         spec_quality: e.details?.spec_quality || null,
         blocked_endpoints: Array.isArray(e.details?.blocked_endpoints)
           ? e.details.blocked_endpoints
+          : [],
+        partial_endpoints: Array.isArray(e.details?.partial_endpoints)
+          ? e.details.partial_endpoints
           : [],
         eligible_endpoints: Array.isArray(e.details?.eligible_endpoints)
           ? e.details.eligible_endpoints
@@ -403,12 +413,74 @@ export default function GeneratorPage({ projectId, onBack }) {
                   {" · "}
                   <b>Eligible:</b> {run.eligible_endpoints?.length ?? 0}
                   {" · "}
+                  <b>Partial shown:</b> {run.partial_endpoints?.length ?? 0}
+                  {" · "}
                   <b>Blocked for mode:</b> {run.blocked_endpoints?.length ?? 0}
                 </div>
+
+                {run.partial_endpoints?.length > 0 && (
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#8a5a00" }}>
+                    Some selected endpoints are usable, but have partial schema
+                    quality issues. Suggested fixes are shown below.
+                  </div>
+                )}
+
                 {run.blocked_endpoints?.length > 0 && (
                   <div style={{ marginTop: 8, fontSize: 13, color: "#8a5a00" }}>
                     Some selected endpoints were excluded for the current
                     generation mode due to spec issues.
+                  </div>
+                )}
+
+                {run.partial_endpoints?.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                      Partial Endpoints / Suggestions
+                    </div>
+
+                    <div style={styles.issueList}>
+                      {run.partial_endpoints.map((ep, i) => (
+                        <div
+                          key={`${ep.endpoint_id || i}-partial-${i}`}
+                          style={styles.issueCard}
+                        >
+                          <div style={styles.issueTitle}>
+                            {ep.method || ep.endpoint_id?.split(" ")[0] || "—"}{" "}
+                            {ep.path ||
+                              ep.endpoint_id?.split(" ").slice(1).join(" ") ||
+                              ""}
+                          </div>
+
+                          <div style={styles.issueMeta}>
+                            status: {ep.status || "partial"} · issues:{" "}
+                            {ep.issues_count ?? ep.issues?.length ?? 0}
+                          </div>
+
+                          <div style={styles.issueText}>
+                            {getPrimaryIssueText(ep)}
+                          </div>
+
+                          {getSuggestedFix(ep) && (
+                            <div style={styles.fixBox}>
+                              <div style={styles.fixTitle}>Suggested Fix</div>
+
+                              {getSuggestedFix(ep)?.type && (
+                                <div style={styles.fixMeta}>
+                                  Type: {getSuggestedFix(ep).type}
+                                  {getSuggestedFix(ep)?.format
+                                    ? ` · Format: ${getSuggestedFix(ep).format}`
+                                    : ""}
+                                </div>
+                              )}
+
+                              <pre style={styles.fixCode}>
+                                {getSuggestedFix(ep)?.content || ""}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -421,7 +493,7 @@ export default function GeneratorPage({ projectId, onBack }) {
                     <div style={styles.issueList}>
                       {run.blocked_endpoints.map((ep, i) => (
                         <div
-                          key={`${ep.endpoint_id || i}-${i}`}
+                          key={`${ep.endpoint_id || i}-blocked-${i}`}
                           style={styles.issueCard}
                         >
                           <div style={styles.issueTitle}>
@@ -430,10 +502,12 @@ export default function GeneratorPage({ projectId, onBack }) {
                               ep.endpoint_id?.split(" ").slice(1).join(" ") ||
                               ""}
                           </div>
+
                           <div style={styles.issueMeta}>
                             status: {ep.status || "blocked"} · issues:{" "}
                             {ep.issues_count ?? ep.issues?.length ?? 0}
                           </div>
+
                           <div style={styles.issueText}>
                             {getPrimaryIssueText(ep)}
                           </div>

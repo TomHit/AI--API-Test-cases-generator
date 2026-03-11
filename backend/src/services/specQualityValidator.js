@@ -118,6 +118,87 @@ function makeSchemaPatchSuggestionForFreeForm(endpoint) {
               additionalProperties: false`,
   };
 }
+function makeResponseSchemaSuggestion(endpoint, status = "200") {
+  const exPath = endpoint?.path || "/example";
+  const exMethod = normalizeMethod(endpoint?.method || "GET").toLowerCase();
+  const p = String(exPath).toLowerCase();
+
+  let properties = `success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Success`;
+  let required = `- success`;
+
+  if (p.includes("login")) {
+    properties = `token:
+                    type: string
+                    example: eyJhbGciOi...
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 123
+                      email:
+                        type: string
+                        format: email
+                        example: user@example.com
+                    required:
+                      - id
+                      - email`;
+    required = `- token
+                - user`;
+  }
+
+  return {
+    type: "openapi_patch",
+    format: "yaml",
+    content: `paths:
+  ${exPath}:
+    ${exMethod}:
+      responses:
+        "${status}":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ${properties}
+                required:
+                  ${required}
+                additionalProperties: false`,
+  };
+}
+function makeMultipartRequestSuggestion(endpoint) {
+  const exPath = endpoint?.path || "/example";
+  const exMethod = normalizeMethod(endpoint?.method || "POST").toLowerCase();
+
+  return {
+    type: "openapi_patch",
+    format: "yaml",
+    content: `paths:
+  ${exPath}:
+    ${exMethod}:
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                description:
+                  type: string
+              required:
+                - file
+              additionalProperties: false`,
+  };
+}
 
 function makeParamSchemaSuggestion(paramName, paramIn) {
   return {
@@ -218,20 +299,22 @@ function validateParams(endpoint, issues) {
 }
 
 function validateRequestBody(endpoint, issues) {
-  const endpointId = endpoint.id;
-  const method = normalizeMethod(endpoint.method);
-  const body = endpoint.requestBody;
+  const endpointId = endpoint?.id;
+  const method = normalizeMethod(endpoint?.method);
+  const body = endpoint?.requestBody;
 
   const methodsThatUsuallyNeedBody = ["POST", "PUT", "PATCH"];
+
   if (!body && methodsThatUsuallyNeedBody.includes(method)) {
     issues.push(
       makeIssue({
         endpointId,
         severity: "warning",
         code: "REQUEST_BODY_MISSING",
-        message: `No request body found for ${method} endpoint.`,
+        message: `Request body is missing for ${method} endpoint. Test data generation may be incomplete.`,
         blocking: false,
         where: "requestBody",
+        suggestedFix: makeRequestBodySuggestion(endpoint),
       }),
     );
     return;
@@ -243,11 +326,13 @@ function validateRequestBody(endpoint, issues) {
     issues.push(
       makeIssue({
         endpointId,
-        severity: "error",
+        severity: "warning",
         code: "REQUEST_BODY_SCHEMA_MISSING",
-        message: "Request body exists but content/schema is missing.",
-        blocking: true,
+        message:
+          "Request body schema is missing. Test data generation may be incomplete.",
+        blocking: false,
         where: "requestBody.content",
+        suggestedFix: makeRequestBodySuggestion(endpoint),
       }),
     );
     return;
@@ -263,28 +348,42 @@ function validateRequestBody(endpoint, issues) {
     issues.push(
       makeIssue({
         endpointId,
-        severity: "error",
+        severity: "warning",
         code: "REQUEST_BODY_SCHEMA_MISSING",
-        message: `Request body media type '${contentType || "unknown"}' is missing schema.`,
-        blocking: true,
-        where: "requestBody.content",
+        message:
+          "Request body schema is missing. Test data generation may be incomplete.",
+        blocking: false,
+        where: contentType
+          ? `requestBody.content.${contentType}`
+          : "requestBody.content",
+        suggestedFix:
+          contentType === "multipart/form-data"
+            ? makeMultipartRequestSuggestion(endpoint)
+            : makeRequestBodySuggestion(endpoint),
       }),
     );
     return;
   }
 
+  // Avoid false positives for unresolved refs
+  if (schema.$ref) return;
+
   const hasProperties =
     isObject(schema.properties) && Object.keys(schema.properties).length > 0;
+
   const hasExample =
     schema.example !== undefined || schema.examples !== undefined;
+
   const allowsAdditional =
     schema.additionalProperties === true ||
     schema.additionalProperties === undefined;
 
   const isFreeFormObject =
-    (schema.type === "object" || schema.type === undefined) &&
+    schema.type === "object" &&
     !hasProperties &&
+    !hasExample &&
     allowsAdditional;
+
   if (isFreeFormObject) {
     issues.push(
       makeIssue({
@@ -294,10 +393,13 @@ function validateRequestBody(endpoint, issues) {
         message:
           "Request body is a free-form object with no properties or examples. Accurate payload cannot be generated.",
         blocking: true,
-        where: "requestBody.content",
+        where: contentType
+          ? `requestBody.content.${contentType}.schema`
+          : "requestBody.content.schema",
         suggestedFix: makeSchemaPatchSuggestionForFreeForm(endpoint),
       }),
     );
+    return;
   }
 
   if (
@@ -312,9 +414,15 @@ function validateRequestBody(endpoint, issues) {
         severity: "warning",
         code: "REQUEST_BODY_OBJECT_WEAK",
         message:
-          "Request body object has no properties/example. Payload generation may be incomplete.",
+          "Request body object has no properties or example. Payload generation may be incomplete.",
         blocking: false,
-        where: "requestBody.content",
+        where: contentType
+          ? `requestBody.content.${contentType}.schema`
+          : "requestBody.content.schema",
+        suggestedFix:
+          contentType === "multipart/form-data"
+            ? makeMultipartRequestSuggestion(endpoint)
+            : makeRequestBodySuggestion(endpoint),
       }),
     );
   }
@@ -328,12 +436,12 @@ function validateRequestBody(endpoint, issues) {
         message:
           "Multipart request body has no field definitions. File/form payload cannot be generated accurately.",
         blocking: false,
-        where: "requestBody.content.multipart/form-data",
+        where: "requestBody.content.multipart/form-data.schema",
+        suggestedFix: makeMultipartRequestSuggestion(endpoint),
       }),
     );
   }
 }
-
 function validateResponses(endpoint, issues) {
   const endpointId = endpoint.id;
   const responses = endpoint.responses || {};
@@ -399,9 +507,11 @@ function validateResponses(endpoint, issues) {
         endpointId,
         severity: "warning",
         code: "RESPONSE_SCHEMA_EMPTY",
-        message: `Response '${status}' schema is empty object. Contract validation will be weak.`,
+        message: `Response '${status}' schema is empty object.
+Contract validation will be weak.`,
         blocking: false,
         where: `responses.${status}.content`,
+        suggestedFix: makeResponseSchemaSuggestion(endpoint, status),
       }),
     );
   }

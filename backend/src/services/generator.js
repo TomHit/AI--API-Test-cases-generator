@@ -316,6 +316,12 @@ function summarizeBlockedQuality(quality, mode = "balanced") {
     blockedStatuses.has(r.status),
   );
 }
+
+function summarizePartialQuality(quality) {
+  return (quality?.endpoint_results || []).filter(
+    (r) => r.status === "partial",
+  );
+}
 function enrichSuitesWithCaseIds(plan, allEndpoints) {
   if (!plan || !Array.isArray(plan.suites)) return plan;
 
@@ -572,6 +578,7 @@ export async function generateTestPlan(payload) {
   const specQuality = validateSpecQuality(doc, endpointRecords);
 
   const blockedForMode = summarizeBlockedQuality(specQuality, generationMode);
+  const partialForUi = summarizePartialQuality(specQuality);
   const eligibleEndpointRecords = filterEndpointsByQuality(
     endpointRecords,
     specQuality,
@@ -760,6 +767,7 @@ export async function generateTestPlan(payload) {
     run_id: `run_${Date.now()}`,
     generation_mode: generationMode,
     spec_quality: specQuality,
+
     blocked_endpoints: blockedForMode.map((ep) => ({
       endpoint_id: ep.endpoint_id,
       method: ep.method,
@@ -768,11 +776,22 @@ export async function generateTestPlan(payload) {
       issues_count: ep.issues_count,
       issues: Array.isArray(ep.issues) ? ep.issues : [],
     })),
+
+    partial_endpoints: partialForUi.map((ep) => ({
+      endpoint_id: ep.endpoint_id,
+      method: ep.method,
+      path: ep.path,
+      status: ep.status,
+      issues_count: ep.issues_count,
+      issues: Array.isArray(ep.issues) ? ep.issues : [],
+    })),
+
     eligible_endpoints: eligibleEndpointRecords.map((e) => ({
       method: String(e.method).toUpperCase(),
       path: e.path,
       id: e.id,
     })),
+
     testplan: obj,
     report,
   };
