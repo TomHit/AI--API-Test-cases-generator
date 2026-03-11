@@ -96,23 +96,6 @@ function getSpecSummary(specQuality) {
   return specQuality?.summary || null;
 }
 
-function getPrimaryIssueText(endpointResult) {
-  if (!endpointResult?.issues || endpointResult.issues.length === 0) return "-";
-  return (
-    endpointResult.issues[0]?.message || endpointResult.issues[0]?.code || "-"
-  );
-}
-
-function getSuggestedFix(endpointResult) {
-  if (!endpointResult?.issues || endpointResult.issues.length === 0)
-    return null;
-
-  for (const issue of endpointResult.issues) {
-    if (issue?.suggested_fix) return issue.suggested_fix;
-  }
-
-  return null;
-}
 export default function GeneratorPage({ projectId, onBack }) {
   const [endpointsLoading, setEndpointsLoading] = useState(true);
   const [endpointsErr, setEndpointsErr] = useState("");
@@ -450,34 +433,44 @@ export default function GeneratorPage({ projectId, onBack }) {
                               ep.endpoint_id?.split(" ").slice(1).join(" ") ||
                               ""}
                           </div>
-
                           <div style={styles.issueMeta}>
                             status: {ep.status || "partial"} · issues:{" "}
                             {ep.issues_count ?? ep.issues?.length ?? 0}
                           </div>
-
-                          <div style={styles.issueText}>
-                            {getPrimaryIssueText(ep)}
-                          </div>
-
-                          {getSuggestedFix(ep) && (
-                            <div style={styles.fixBox}>
-                              <div style={styles.fixTitle}>Suggested Fix</div>
-
-                              {getSuggestedFix(ep)?.type && (
-                                <div style={styles.fixMeta}>
-                                  Type: {getSuggestedFix(ep).type}
-                                  {getSuggestedFix(ep)?.format
-                                    ? ` · Format: ${getSuggestedFix(ep).format}`
-                                    : ""}
+                          <div style={{ marginTop: 6 }}>
+                            {(ep.issues || []).map((issue, idx) => (
+                              <div key={idx} style={{ marginBottom: 10 }}>
+                                <div style={styles.issueText}>
+                                  {issue?.message || issue?.code || "-"}
                                 </div>
-                              )}
 
-                              <pre style={styles.fixCode}>
-                                {getSuggestedFix(ep)?.content || ""}
-                              </pre>
-                            </div>
-                          )}
+                                {issue?.suggested_fix && (
+                                  <div style={styles.fixBox}>
+                                    <div style={styles.fixTitle}>
+                                      Suggested Fix
+                                    </div>
+
+                                    <div style={styles.fixMeta}>
+                                      {issue.code || "ISSUE"}
+                                      {issue.severity
+                                        ? ` · ${issue.severity}`
+                                        : ""}
+                                      {issue.suggested_fix?.type
+                                        ? ` · Type: ${issue.suggested_fix.type}`
+                                        : ""}
+                                      {issue.suggested_fix?.format
+                                        ? ` · Format: ${issue.suggested_fix.format}`
+                                        : ""}
+                                    </div>
+
+                                    <pre style={styles.fixCode}>
+                                      {issue.suggested_fix?.content || ""}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>{" "}
                         </div>
                       ))}
                     </div>
@@ -508,28 +501,40 @@ export default function GeneratorPage({ projectId, onBack }) {
                             {ep.issues_count ?? ep.issues?.length ?? 0}
                           </div>
 
-                          <div style={styles.issueText}>
-                            {getPrimaryIssueText(ep)}
-                          </div>
-
-                          {getSuggestedFix(ep) && (
-                            <div style={styles.fixBox}>
-                              <div style={styles.fixTitle}>Suggested Fix</div>
-
-                              {getSuggestedFix(ep)?.type && (
-                                <div style={styles.fixMeta}>
-                                  Type: {getSuggestedFix(ep).type}
-                                  {getSuggestedFix(ep)?.format
-                                    ? ` · Format: ${getSuggestedFix(ep).format}`
-                                    : ""}
+                          <div style={{ marginTop: 6 }}>
+                            {(ep.issues || []).map((issue, idx) => (
+                              <div key={idx} style={{ marginBottom: 10 }}>
+                                <div style={styles.issueText}>
+                                  {issue?.message || issue?.code || "-"}
                                 </div>
-                              )}
 
-                              <pre style={styles.fixCode}>
-                                {getSuggestedFix(ep)?.content || ""}
-                              </pre>
-                            </div>
-                          )}
+                                {issue?.suggested_fix && (
+                                  <div style={styles.fixBox}>
+                                    <div style={styles.fixTitle}>
+                                      Suggested Fix
+                                    </div>
+
+                                    <div style={styles.fixMeta}>
+                                      {issue.code || "ISSUE"}
+                                      {issue.severity
+                                        ? ` · ${issue.severity}`
+                                        : ""}
+                                      {issue.suggested_fix?.type
+                                        ? ` · Type: ${issue.suggested_fix.type}`
+                                        : ""}
+                                      {issue.suggested_fix?.format
+                                        ? ` · Format: ${issue.suggested_fix.format}`
+                                        : ""}
+                                    </div>
+
+                                    <pre style={styles.fixCode}>
+                                      {issue.suggested_fix?.content || ""}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ))}
                     </div>

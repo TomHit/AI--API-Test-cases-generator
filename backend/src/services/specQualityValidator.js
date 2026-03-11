@@ -118,6 +118,94 @@ function makeSchemaPatchSuggestionForFreeForm(endpoint) {
               additionalProperties: false`,
   };
 }
+function makeRequestBodySuggestion(endpoint) {
+  const exPath = endpoint?.path || "/example";
+  const exMethod = normalizeMethod(endpoint?.method || "POST").toLowerCase();
+  const p = String(exPath).toLowerCase();
+
+  let properties = `field1:
+                  type: string
+                  example: value1
+                field2:
+                  type: string
+                  example: value2`;
+  let required = `- field1`;
+
+  if (p.includes("login")) {
+    properties = `email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: Secret123`;
+    required = `- email
+                - password`;
+  } else if (p.includes("signup") || p.includes("register")) {
+    properties = `name:
+                  type: string
+                  example: John Doe
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: Secret123`;
+    required = `- name
+                - email
+                - password`;
+  }
+
+  return {
+    type: "openapi_patch",
+    format: "yaml",
+    content: `paths:
+  ${exPath}:
+    ${exMethod}:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ${properties}
+              required:
+                ${required}
+              additionalProperties: false`,
+  };
+}
+
+function makeMultipartRequestSuggestion(endpoint) {
+  const exPath = endpoint?.path || "/example";
+  const exMethod = normalizeMethod(endpoint?.method || "POST").toLowerCase();
+
+  return {
+    type: "openapi_patch",
+    format: "yaml",
+    content: `paths:
+  ${exPath}:
+    ${exMethod}:
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                description:
+                  type: string
+              required:
+                - file
+              additionalProperties: false`,
+  };
+}
 function makeResponseSchemaSuggestion(endpoint, status = "200") {
   const exPath = endpoint?.path || "/example";
   const exMethod = normalizeMethod(endpoint?.method || "GET").toLowerCase();
@@ -170,33 +258,6 @@ function makeResponseSchemaSuggestion(endpoint, status = "200") {
                 required:
                   ${required}
                 additionalProperties: false`,
-  };
-}
-function makeMultipartRequestSuggestion(endpoint) {
-  const exPath = endpoint?.path || "/example";
-  const exMethod = normalizeMethod(endpoint?.method || "POST").toLowerCase();
-
-  return {
-    type: "openapi_patch",
-    format: "yaml",
-    content: `paths:
-  ${exPath}:
-    ${exMethod}:
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                description:
-                  type: string
-              required:
-                - file
-              additionalProperties: false`,
   };
 }
 
@@ -365,7 +426,6 @@ function validateRequestBody(endpoint, issues) {
     return;
   }
 
-  // Avoid false positives for unresolved refs
   if (schema.$ref) return;
 
   const hasProperties =
