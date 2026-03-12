@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apitestops.local/schemas/test_plan.schema.json",
+  "title": "API Test Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "generation", "suites"],
+  "properties": {
+    "project": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["project_id"],
+      "properties": {
+        "project_id": { "type": "string" },
+        "name": { "type": "string" },
+        "env": { "type": "string" }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "type": "string" },
+        "ai": { "type": "boolean" },
+        "generated_at": { "type": "string" }
+      }
+    },
+    "suites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["suite_id", "name", "endpoints", "cases"],
+        "properties": {
+          "suite_id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "endpoints": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "cases": {
+            "type": "array",
+            "items": {
+              "$ref": "./test_case.schema.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}

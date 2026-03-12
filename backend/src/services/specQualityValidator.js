@@ -359,7 +359,7 @@ function validateParams(endpoint, issues) {
   }
 }
 
-function validateRequestBody(endpoint, issues) {
+function validateRequestBody(endpoint, issues, openapiDoc) {
   const endpointId = endpoint?.id;
   const method = normalizeMethod(endpoint?.method);
   const body = endpoint?.requestBody;
@@ -400,7 +400,7 @@ function validateRequestBody(endpoint, issues) {
   }
 
   const media = getPreferredRequestMedia(body);
-  const schema = media?.schema || null;
+  let schema = media?.schema || null;
   const contentType = Object.entries(body.content || {}).find(
     ([, v]) => v === media,
   )?.[0];
@@ -426,7 +426,29 @@ function validateRequestBody(endpoint, issues) {
     return;
   }
 
-  if (schema.$ref) return;
+  if (schema.$ref) {
+    const resolved = resolveRef(schema.$ref, openapiDoc);
+    if (!resolved) {
+      issues.push(
+        makeIssue({
+          endpointId,
+          severity: "warning",
+          code: "REQUEST_BODY_SCHEMA_UNRESOLVED_REF",
+          message: `Request body schema reference '${schema.$ref}' could not be resolved.`,
+          blocking: false,
+          where: contentType
+            ? `requestBody.content.${contentType}.schema`
+            : "requestBody.content.schema",
+          suggestedFix:
+            contentType === "multipart/form-data"
+              ? makeMultipartRequestSuggestion(endpoint)
+              : makeRequestBodySuggestion(endpoint),
+        }),
+      );
+      return;
+    }
+    schema = resolved;
+  }
 
   const hasProperties =
     isObject(schema.properties) && Object.keys(schema.properties).length > 0;
@@ -693,7 +715,7 @@ export function validateSpecQuality(openapiDoc, endpoints = []) {
 
     validateEndpointBasics(endpoint, issues);
     validateParams(endpoint, issues);
-    validateRequestBody(endpoint, issues);
+    validateRequestBody(endpoint, issues, openapiDoc);
     validateResponses(endpoint, issues);
 
     const status = endpointStatusFromIssues(issues);
