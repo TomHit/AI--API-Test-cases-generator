@@ -5,17 +5,30 @@ export default function DashboardPage({ onOpenProject }) {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
   const [err, setErr] = useState("");
+  const [showCreateForm, setShowCreateForm] = useState(false);
+
+  const [newProject, setNewProject] = useState({
+    project_name: "",
+    env_count: 1,
+    docs_status: "missing",
+  });
 
   async function load() {
     setLoading(true);
     setErr("");
+
     try {
       const res = await fetch("/api/projects", {
         headers: { Accept: "application/json" },
       });
+
       const text = await res.text();
       const data = text ? JSON.parse(text) : [];
-      if (!res.ok) throw new Error(data?.message || `Failed: ${res.status}`);
+
+      if (!res.ok) {
+        throw new Error(data?.message || `Failed: ${res.status}`);
+      }
+
       setProjects(Array.isArray(data) ? data : []);
     } catch (e) {
       setErr(e.message || String(e));
@@ -28,86 +41,184 @@ export default function DashboardPage({ onOpenProject }) {
     load();
   }, []);
 
+  function handleCreateProject(e) {
+    e.preventDefault();
+
+    if (!newProject.project_name.trim()) {
+      alert("Project name is required.");
+      return;
+    }
+
+    const created = {
+      project_id: `proj_${Date.now()}`,
+      project_name: newProject.project_name.trim(),
+      env_count: Number(newProject.env_count) || 1,
+      docs_status: newProject.docs_status || "missing",
+      last_generated_at: null,
+    };
+
+    setProjects((prev) => [created, ...prev]);
+    setShowCreateForm(false);
+    setNewProject({
+      project_name: "",
+      env_count: 1,
+      docs_status: "missing",
+    });
+  }
+
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <div>
-          <div style={styles.title}>API TestOps</div>
-          <div style={styles.sub}>Projects Dashboard</div>
+    <div className="projects-workspace">
+      <section className="page-card">
+        <div className="section-head projects-topbar">
+          <div>
+            <h3 style={{ margin: 0 }}>Projects</h3>
+            <p className="muted" style={{ marginTop: 6 }}>
+              Manage multiple API projects under your organization workspace.
+            </p>
+          </div>
+
+          <div className="projects-actions">
+            <button type="button" className="secondary-btn" onClick={load}>
+              Refresh
+            </button>
+
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={() => setShowCreateForm((prev) => !prev)}
+            >
+              + New Project
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button style={styles.btn} onClick={load}>
-            Refresh
-          </button>
-          <button
-            style={styles.btnPrimary}
-            onClick={() =>
-              alert(
-                "MVP: Create Project UI can be added next. For now use backend to create projects.",
-              )
-            }
-          >
-            + New Project
-          </button>
-        </div>
+        {showCreateForm && (
+          <form className="projects-form-card" onSubmit={handleCreateProject}>
+            <div className="projects-form-title">Create New Project</div>
+
+            <div className="projects-form-grid">
+              <div>
+                <label className="projects-label">Project Name</label>
+                <input
+                  type="text"
+                  value={newProject.project_name}
+                  onChange={(e) =>
+                    setNewProject((prev) => ({
+                      ...prev,
+                      project_name: e.target.value,
+                    }))
+                  }
+                  placeholder="Enter project name"
+                />
+              </div>
+
+              <div>
+                <label className="projects-label">Environment Count</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={newProject.env_count}
+                  onChange={(e) =>
+                    setNewProject((prev) => ({
+                      ...prev,
+                      env_count: e.target.value,
+                    }))
+                  }
+                  placeholder="1"
+                />
+              </div>
+
+              <div className="projects-form-full">
+                <label className="projects-label">Docs Status</label>
+                <select
+                  value={newProject.docs_status}
+                  onChange={(e) =>
+                    setNewProject((prev) => ({
+                      ...prev,
+                      docs_status: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="ok">Docs Ready</option>
+                  <option value="missing">Docs Missing</option>
+                  <option value="error">Docs Error</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="projects-form-actions">
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => setShowCreateForm(false)}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="primary-btn">
+                Create Project
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      <div className="projects-grid">
+        <section className="page-card projects-left">
+          <div className="projects-panel-title">Project Directory</div>
+
+          {loading && <div className="info-box">Loading projects…</div>}
+
+          {!!err && <div className="error-box">Error: {err}</div>}
+
+          {!loading && !err && projects.length > 0 && (
+            <div className="project-grid">
+              {projects.map((p) => (
+                <ProjectCard
+                  key={p.project_id}
+                  project={p}
+                  onOpen={() => onOpenProject?.(p.project_id)}
+                />
+              ))}
+            </div>
+          )}
+
+          {!loading && !err && projects.length === 0 && (
+            <div className="info-box">No projects found.</div>
+          )}
+        </section>
+
+        <section className="page-card projects-right">
+          <div className="projects-panel-title">Project Model</div>
+
+          <div className="projects-info-stack">
+            <div className="projects-info-card">
+              <div className="projects-info-title">How projects work</div>
+              <p className="muted" style={{ margin: 0 }}>
+                Each organization can have multiple projects, and each project
+                can later be assigned to one or more teams.
+              </p>
+            </div>
+
+            <div className="projects-info-card">
+              <div className="projects-info-title">Recommended flow</div>
+              <ul className="simple-list">
+                <li>Create a project</li>
+                <li>Upload or connect API spec</li>
+                <li>Open the project workspace</li>
+                <li>Generate test cases for selected endpoints</li>
+              </ul>
+            </div>
+
+            <div className="projects-info-card projects-highlight-card">
+              <div className="projects-info-title">Why this matters</div>
+              <p style={{ margin: 0 }}>
+                Projects are the main working unit for specs, generated test
+                cases, review, and future execution history.
+              </p>
+            </div>
+          </div>
+        </section>
       </div>
-
-      {loading && <div style={styles.note}>Loading projects…</div>}
-      {!!err && <div style={styles.err}>Error: {err}</div>}
-
-      <div style={styles.grid}>
-        {projects.map((p) => (
-          <ProjectCard
-            key={p.project_id}
-            project={p}
-            onOpen={() => onOpenProject?.(p.project_id)}
-          />
-        ))}
-      </div>
-
-      {!loading && !err && projects.length === 0 && (
-        <div style={styles.note}>No projects found.</div>
-      )}
     </div>
   );
 }
-
-const styles = {
-  page: { padding: 18, fontFamily: "system-ui, Arial", color: "#111" },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  title: { fontSize: 22, fontWeight: 800 },
-  sub: { fontSize: 13, opacity: 0.7 },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: 12,
-  },
-  btn: {
-    padding: "8px 10px",
-    border: "1px solid #ccc",
-    borderRadius: 10,
-    background: "white",
-    cursor: "pointer",
-  },
-  btnPrimary: {
-    padding: "8px 10px",
-    border: "1px solid #111",
-    borderRadius: 10,
-    background: "#111",
-    color: "white",
-    cursor: "pointer",
-  },
-  note: { padding: 12, borderRadius: 12, background: "#f6f6f6" },
-  err: {
-    padding: 12,
-    borderRadius: 12,
-    background: "#ffe6e6",
-    border: "1px solid #ffb3b3",
-  },
-};

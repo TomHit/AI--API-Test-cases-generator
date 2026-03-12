@@ -1,43 +1,67 @@
 import React from "react";
 
 export default function ProjectCard({ project, onOpen }) {
-  const status = project.docs_status || "missing";
-  const badge =
+  const status = project?.docs_status || "missing";
+
+  const statusLabel =
     status === "ok"
-      ? "✅ Docs OK"
+      ? "Docs Ready"
       : status === "error"
-        ? "❌ Docs Error"
-        : "⚠️ Docs Missing";
+        ? "Docs Error"
+        : "Docs Missing";
+
+  const statusClass =
+    status === "ok"
+      ? "status-pill success"
+      : status === "error"
+        ? "status-pill danger"
+        : "status-pill warning";
 
   return (
-    <div style={styles.card}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <div style={styles.name}>{project.project_name}</div>
-        <div style={styles.badge}>{badge}</div>
+    <div className="project-card">
+      <div className="project-card-top">
+        <div>
+          <div className="project-card-title">
+            {project?.project_name || "Untitled Project"}
+          </div>
+          <div className="project-card-subtitle">
+            Project ID: {project?.project_id || "—"}
+          </div>
+        </div>
+
+        <div className={statusClass}>{statusLabel}</div>
       </div>
 
-      <div style={styles.meta}>
-        <div>
-          <b>ID:</b> {project.project_id}
+      <div className="project-card-meta">
+        <div className="project-meta-item">
+          <span>Environments</span>
+          <strong>{project?.env_count ?? "—"}</strong>
         </div>
-        <div>
-          <b>Envs:</b> {project.env_count ?? "—"}
-        </div>
-        <div>
-          <b>Last:</b>{" "}
-          {project.last_generated_at
-            ? new Date(project.last_generated_at).toLocaleString()
-            : "—"}
+
+        <div className="project-meta-item">
+          <span>Last Generated</span>
+          <strong>
+            {project?.last_generated_at
+              ? new Date(project.last_generated_at).toLocaleString()
+              : "—"}
+          </strong>
         </div>
       </div>
 
-      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-        <button style={styles.btnPrimary} onClick={onOpen}>
-          Open
+      <div className="project-card-ai-note">
+        AI workspace will use this project to organize API specs, generated test
+        cases, and future reporting.
+      </div>
+
+      <div className="project-card-actions">
+        <button type="button" className="primary-btn" onClick={onOpen}>
+          Open Project
         </button>
+
         <button
-          style={styles.btn}
-          onClick={() => alert("MVP: Settings page can be added next.")}
+          type="button"
+          className="secondary-btn"
+          onClick={() => alert("MVP: Project settings page can be added next.")}
         >
           Settings
         </button>
@@ -45,30 +69,3 @@ export default function ProjectCard({ project, onOpen }) {
     </div>
   );
 }
-
-const styles = {
-  card: {
-    border: "1px solid #e5e5e5",
-    borderRadius: 14,
-    padding: 12,
-    background: "white",
-  },
-  name: { fontSize: 16, fontWeight: 800 },
-  badge: { fontSize: 12, opacity: 0.85 },
-  meta: { marginTop: 10, fontSize: 13, opacity: 0.85, display: "grid", gap: 4 },
-  btn: {
-    padding: "8px 10px",
-    border: "1px solid #ccc",
-    borderRadius: 10,
-    background: "white",
-    cursor: "pointer",
-  },
-  btnPrimary: {
-    padding: "8px 10px",
-    border: "1px solid #111",
-    borderRadius: 10,
-    background: "#111",
-    color: "white",
-    cursor: "pointer",
-  },
-};

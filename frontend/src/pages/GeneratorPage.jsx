@@ -80,6 +80,7 @@ function toCsvValue(v) {
   const escaped = s.replace(/"/g, '""');
   return `"${escaped}"`;
 }
+
 function buildCsvFromTable(rows) {
   const header = TEST_CASE_CSV_COLUMNS.map((c) => c.label);
   const lines = [header.join(",")];
@@ -138,7 +139,11 @@ export default function GeneratorPage({ projectId, onBack }) {
   );
 
   async function loadEndpoints(specSource = "") {
-    if (!projectId) return;
+    if (!projectId) {
+      setEndpoints([]);
+      setEndpointsLoading(false);
+      return;
+    }
 
     setEndpointsLoading(true);
     setEndpointsErr("");
@@ -178,6 +183,12 @@ export default function GeneratorPage({ projectId, onBack }) {
 
   async function generate() {
     const selected = selection.selected_endpoint_ids;
+
+    if (!projectId) {
+      alert("Select a project first.");
+      return;
+    }
+
     if (!selected.length) {
       alert("Select at least 1 endpoint.");
       return;
@@ -294,103 +305,133 @@ export default function GeneratorPage({ projectId, onBack }) {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <div>
-          <div style={styles.title}>Generate Test Cases</div>
-          <div style={styles.sub}>Project: {projectId || "—"}</div>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button style={styles.btn} onClick={() => onBack?.()}>
-            ← Back
-          </button>
-          <button
-            style={styles.btn}
-            onClick={loadEndpoints}
-            disabled={endpointsLoading}
-          >
-            Reload Endpoints
-          </button>
-          <button
-            type="button"
-            style={styles.btn}
-            onClick={() => loadEndpoints(options.spec_source || "")}
-          >
-            Load from Spec URL
-          </button>
-          <button
-            style={styles.btnPrimary}
-            onClick={generate}
-            disabled={run.status === "running"}
-          >
-            {run.status === "running" ? "Generating…" : "Generate Test Cases"}
-          </button>
-        </div>
-      </div>
+    <div className="generator-workspace">
+      <section className="page-card">
+        <div className="section-head generator-topbar">
+          <div>
+            <h3 style={{ margin: 0 }}>Generate Test Cases</h3>
+            <p className="muted" style={{ marginTop: 6 }}>
+              Project: {projectId || "No project selected"}
+            </p>
+          </div>
 
-      <div style={styles.mainGrid}>
-        <div style={styles.leftPanel}>
-          <div style={styles.panelTitle}>Endpoints</div>
+          <div className="generator-actions">
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => onBack?.()}
+            >
+              ← Back
+            </button>
+
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => loadEndpoints()}
+              disabled={endpointsLoading || !projectId}
+            >
+              Reload Endpoints
+            </button>
+
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => loadEndpoints(options.spec_source || "")}
+              disabled={!projectId}
+            >
+              Load from Spec URL
+            </button>
+
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={generate}
+              disabled={run.status === "running" || !projectId}
+            >
+              {run.status === "running" ? "Generating…" : "Generate Test Cases"}
+            </button>
+          </div>
+        </div>
+
+        {!projectId && (
+          <div className="info-box" style={{ marginTop: 14 }}>
+            Select a project first from the Projects page to load endpoints and
+            generate AI test cases.
+          </div>
+        )}
+      </section>
+
+      <div className="generator-grid">
+        <section className="page-card generator-left">
+          <div className="generator-panel-title">Endpoints</div>
+
           {endpointsLoading && (
-            <div style={styles.note}>Loading endpoints…</div>
+            <div className="info-box">Loading endpoints…</div>
           )}
+
           {!!endpointsErr && (
-            <div style={styles.err}>Error: {endpointsErr}</div>
+            <div className="error-box">Error: {endpointsErr}</div>
           )}
 
-          <EndpointSelector
-            endpoints={endpoints}
-            selection={selection}
-            onChange={setSelection}
-          />
-        </div>
+          {!endpointsLoading && !endpointsErr && projectId && (
+            <EndpointSelector
+              endpoints={endpoints}
+              selection={selection}
+              onChange={setSelection}
+            />
+          )}
+        </section>
 
-        <div style={styles.rightPanel}>
-          <div style={styles.topRight}>
-            <div style={styles.panelTitle}>Options</div>
+        <div className="generator-right">
+          <section className="page-card">
+            <div className="generator-panel-title">Options</div>
+
             <GenerationOptions options={options} onChange={setOptions} />
+
             {run.spec_quality && (
-              <div style={{ marginTop: 10, ...styles.note }}>
-                <div style={{ fontWeight: 800, marginBottom: 8 }}>
+              <div className="info-box" style={{ marginTop: 14 }}>
+                <div style={{ fontWeight: 800, marginBottom: 10 }}>
                   Spec Analysis
                 </div>
 
-                <div style={styles.kpiRow}>
-                  <div style={styles.kpiBox}>
-                    <div style={styles.kpiLabel}>Mode</div>
-                    <div style={styles.kpiValue}>{run.generation_mode}</div>
+                <div className="generator-kpi-row">
+                  <div className="generator-kpi-box">
+                    <div className="generator-kpi-label">Mode</div>
+                    <div className="generator-kpi-value">
+                      {run.generation_mode}
+                    </div>
                   </div>
 
-                  <div style={styles.kpiBox}>
-                    <div style={styles.kpiLabel}>Health</div>
-                    <div style={styles.kpiValue}>
+                  <div className="generator-kpi-box">
+                    <div className="generator-kpi-label">Health</div>
+                    <div className="generator-kpi-value">
                       {run.spec_quality?.spec_health_score ?? "—"}
                     </div>
                   </div>
 
-                  <div style={styles.kpiBox}>
-                    <div style={styles.kpiLabel}>Ready</div>
-                    <div style={styles.kpiValue}>
+                  <div className="generator-kpi-box">
+                    <div className="generator-kpi-label">Ready</div>
+                    <div className="generator-kpi-value">
                       {getSpecSummary(run.spec_quality)?.ready ?? "—"}
                     </div>
                   </div>
 
-                  <div style={styles.kpiBox}>
-                    <div style={styles.kpiLabel}>Partial</div>
-                    <div style={styles.kpiValue}>
+                  <div className="generator-kpi-box">
+                    <div className="generator-kpi-label">Partial</div>
+                    <div className="generator-kpi-value">
                       {getSpecSummary(run.spec_quality)?.partial ?? "—"}
                     </div>
                   </div>
 
-                  <div style={styles.kpiBox}>
-                    <div style={styles.kpiLabel}>Blocked</div>
-                    <div style={styles.kpiValue}>
+                  <div className="generator-kpi-box">
+                    <div className="generator-kpi-label">Blocked</div>
+                    <div className="generator-kpi-value">
                       {getSpecSummary(run.spec_quality)?.blocked ?? "—"}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ marginTop: 10, fontSize: 13 }}>
+                <div style={{ marginTop: 12, fontSize: 13 }}>
                   <b>Total endpoints:</b>{" "}
                   {getSpecSummary(run.spec_quality)?.total_endpoints ?? "—"}
                   {" · "}
@@ -402,55 +443,57 @@ export default function GeneratorPage({ projectId, onBack }) {
                 </div>
 
                 {run.partial_endpoints?.length > 0 && (
-                  <div style={{ marginTop: 8, fontSize: 13, color: "#8a5a00" }}>
+                  <div className="generator-warning-text">
                     Some selected endpoints are usable, but have partial schema
                     quality issues. Suggested fixes are shown below.
                   </div>
                 )}
 
                 {run.blocked_endpoints?.length > 0 && (
-                  <div style={{ marginTop: 8, fontSize: 13, color: "#8a5a00" }}>
+                  <div className="generator-warning-text">
                     Some selected endpoints were excluded for the current
                     generation mode due to spec issues.
                   </div>
                 )}
 
                 {run.partial_endpoints?.length > 0 && (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 8 }}>
                       Partial Endpoints / Suggestions
                     </div>
 
-                    <div style={styles.issueList}>
+                    <div className="generator-issue-list">
                       {run.partial_endpoints.map((ep, i) => (
                         <div
                           key={`${ep.endpoint_id || i}-partial-${i}`}
-                          style={styles.issueCard}
+                          className="generator-issue-card"
                         >
-                          <div style={styles.issueTitle}>
+                          <div className="generator-issue-title">
                             {ep.method || ep.endpoint_id?.split(" ")[0] || "—"}{" "}
                             {ep.path ||
                               ep.endpoint_id?.split(" ").slice(1).join(" ") ||
                               ""}
                           </div>
-                          <div style={styles.issueMeta}>
+
+                          <div className="generator-issue-meta">
                             status: {ep.status || "partial"} · issues:{" "}
                             {ep.issues_count ?? ep.issues?.length ?? 0}
                           </div>
+
                           <div style={{ marginTop: 6 }}>
                             {(ep.issues || []).map((issue, idx) => (
-                              <div key={idx} style={{ marginBottom: 10 }}>
-                                <div style={styles.issueText}>
+                              <div key={idx} style={{ marginBottom: 12 }}>
+                                <div className="generator-issue-text">
                                   {issue?.message || issue?.code || "-"}
                                 </div>
 
                                 {issue?.suggested_fix && (
-                                  <div style={styles.fixBox}>
-                                    <div style={styles.fixTitle}>
+                                  <div className="generator-fix-box">
+                                    <div className="generator-fix-title">
                                       Suggested Fix
                                     </div>
 
-                                    <div style={styles.fixMeta}>
+                                    <div className="generator-fix-meta">
                                       {issue.code || "ISSUE"}
                                       {issue.severity
                                         ? ` · ${issue.severity}`
@@ -463,14 +506,14 @@ export default function GeneratorPage({ projectId, onBack }) {
                                         : ""}
                                     </div>
 
-                                    <pre style={styles.fixCode}>
+                                    <pre className="generator-fix-code">
                                       {issue.suggested_fix?.content || ""}
                                     </pre>
                                   </div>
                                 )}
                               </div>
                             ))}
-                          </div>{" "}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -478,43 +521,43 @@ export default function GeneratorPage({ projectId, onBack }) {
                 )}
 
                 {run.blocked_endpoints?.length > 0 && (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 8 }}>
                       Blocked / Excluded Endpoints
                     </div>
 
-                    <div style={styles.issueList}>
+                    <div className="generator-issue-list">
                       {run.blocked_endpoints.map((ep, i) => (
                         <div
                           key={`${ep.endpoint_id || i}-blocked-${i}`}
-                          style={styles.issueCard}
+                          className="generator-issue-card"
                         >
-                          <div style={styles.issueTitle}>
+                          <div className="generator-issue-title">
                             {ep.method || ep.endpoint_id?.split(" ")[0] || "—"}{" "}
                             {ep.path ||
                               ep.endpoint_id?.split(" ").slice(1).join(" ") ||
                               ""}
                           </div>
 
-                          <div style={styles.issueMeta}>
+                          <div className="generator-issue-meta">
                             status: {ep.status || "blocked"} · issues:{" "}
                             {ep.issues_count ?? ep.issues?.length ?? 0}
                           </div>
 
                           <div style={{ marginTop: 6 }}>
                             {(ep.issues || []).map((issue, idx) => (
-                              <div key={idx} style={{ marginBottom: 10 }}>
-                                <div style={styles.issueText}>
+                              <div key={idx} style={{ marginBottom: 12 }}>
+                                <div className="generator-issue-text">
                                   {issue?.message || issue?.code || "-"}
                                 </div>
 
                                 {issue?.suggested_fix && (
-                                  <div style={styles.fixBox}>
-                                    <div style={styles.fixTitle}>
+                                  <div className="generator-fix-box">
+                                    <div className="generator-fix-title">
                                       Suggested Fix
                                     </div>
 
-                                    <div style={styles.fixMeta}>
+                                    <div className="generator-fix-meta">
                                       {issue.code || "ISSUE"}
                                       {issue.severity
                                         ? ` · ${issue.severity}`
@@ -527,7 +570,7 @@ export default function GeneratorPage({ projectId, onBack }) {
                                         : ""}
                                     </div>
 
-                                    <pre style={styles.fixCode}>
+                                    <pre className="generator-fix-code">
                                       {issue.suggested_fix?.content || ""}
                                     </pre>
                                   </div>
@@ -542,7 +585,8 @@ export default function GeneratorPage({ projectId, onBack }) {
                 )}
               </div>
             )}
-            <div style={{ marginTop: 10 }}>
+
+            <div style={{ marginTop: 14 }}>
               <ExportButtons
                 disabled={!run.testplan}
                 onExportJson={exportJson}
@@ -551,12 +595,12 @@ export default function GeneratorPage({ projectId, onBack }) {
             </div>
 
             {run.report && (
-              <div style={{ marginTop: 10, ...styles.note }}>
-                <b>Report:</b> total={run.report.total_cases ?? "—"},
+              <div className="info-box" style={{ marginTop: 14 }}>
+                <b>Report:</b> total={run.report.total_cases ?? "—"},{" "}
                 needs_review={run.report.needs_review ?? "—"}
                 {Array.isArray(run.report.warnings) &&
                   run.report.warnings.length > 0 && (
-                    <div style={{ marginTop: 6 }}>
+                    <div style={{ marginTop: 8 }}>
                       <b>Warnings:</b>
                       <ul style={{ marginTop: 6 }}>
                         {run.report.warnings.slice(0, 5).map((w, i) => (
@@ -569,7 +613,7 @@ export default function GeneratorPage({ projectId, onBack }) {
             )}
 
             {run.status === "error" && (
-              <div style={styles.err}>
+              <div className="error-box" style={{ marginTop: 14 }}>
                 <div>Error: {run.error?.message || "Unknown error"}</div>
                 {run.blocked_endpoints?.length > 0 && (
                   <div style={{ marginTop: 6, fontSize: 13 }}>
@@ -578,20 +622,32 @@ export default function GeneratorPage({ projectId, onBack }) {
                 )}
               </div>
             )}
-          </div>
+          </section>
 
-          <div style={styles.preview}>
-            <div style={styles.previewHeader}>
-              <div style={styles.panelTitle}>Preview</div>
+          <section className="page-card generator-preview-card">
+            <div className="generator-preview-header">
+              <div className="generator-panel-title">Preview</div>
+
               <div style={{ display: "flex", gap: 8 }}>
                 <button
-                  style={activeTab === "table" ? styles.tabActive : styles.tab}
+                  type="button"
+                  className={
+                    activeTab === "table"
+                      ? "generator-tab active"
+                      : "generator-tab"
+                  }
                   onClick={() => setActiveTab("table")}
                 >
                   Table View
                 </button>
+
                 <button
-                  style={activeTab === "json" ? styles.tabActive : styles.tab}
+                  type="button"
+                  className={
+                    activeTab === "json"
+                      ? "generator-tab active"
+                      : "generator-tab"
+                  }
                   onClick={() => setActiveTab("json")}
                   disabled={!run.testplan}
                 >
@@ -606,13 +662,13 @@ export default function GeneratorPage({ projectId, onBack }) {
                 onRowClick={(row) => setDrawer({ open: true, row })}
               />
             ) : (
-              <pre style={styles.jsonBox}>
+              <pre className="generator-json-box">
                 {run.testplan
                   ? JSON.stringify(run.testplan, null, 2)
                   : "No output yet."}
               </pre>
             )}
-          </div>
+          </section>
         </div>
       </div>
 
@@ -624,168 +680,3 @@ export default function GeneratorPage({ projectId, onBack }) {
     </div>
   );
 }
-
-const styles = {
-  page: { padding: 18, fontFamily: "system-ui, Arial", color: "#111" },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  title: { fontSize: 20, fontWeight: 800 },
-  sub: { fontSize: 13, opacity: 0.7 },
-  btn: {
-    padding: "8px 10px",
-    border: "1px solid #ccc",
-    borderRadius: 10,
-    background: "white",
-    cursor: "pointer",
-  },
-  btnPrimary: {
-    padding: "8px 10px",
-    border: "1px solid #111",
-    borderRadius: 10,
-    background: "#111",
-    color: "white",
-    cursor: "pointer",
-  },
-  mainGrid: {
-    display: "grid",
-    gridTemplateColumns: "360px 1fr",
-    gap: 12,
-    alignItems: "start",
-  },
-  leftPanel: {
-    border: "1px solid #e5e5e5",
-    borderRadius: 14,
-    padding: 12,
-    background: "#fff",
-  },
-  rightPanel: {
-    display: "grid",
-    gridTemplateRows: "auto 1fr",
-    gap: 12,
-  },
-  topRight: {
-    border: "1px solid #e5e5e5",
-    borderRadius: 14,
-    padding: 12,
-    background: "#fff",
-  },
-  preview: {
-    border: "1px solid #e5e5e5",
-    borderRadius: 14,
-    padding: 12,
-    background: "#fff",
-    minHeight: 420,
-  },
-  panelTitle: { fontWeight: 800, marginBottom: 8 },
-  previewHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  tab: {
-    padding: "6px 10px",
-    borderRadius: 10,
-    border: "1px solid #ddd",
-    background: "#fff",
-    cursor: "pointer",
-  },
-  tabActive: {
-    padding: "6px 10px",
-    borderRadius: 10,
-    border: "1px solid #111",
-    background: "#111",
-    color: "#fff",
-    cursor: "pointer",
-  },
-  note: { padding: 10, borderRadius: 12, background: "#f6f6f6" },
-  err: {
-    padding: 10,
-    borderRadius: 12,
-    background: "#ffe6e6",
-    border: "1px solid #ffb3b3",
-    marginTop: 10,
-  },
-  jsonBox: {
-    background: "#0b1020",
-    color: "#e5e7eb",
-    padding: 12,
-    borderRadius: 12,
-    overflow: "auto",
-    maxHeight: 520,
-    fontSize: 12,
-  },
-  kpiRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))",
-    gap: 8,
-    marginTop: 8,
-  },
-  kpiBox: {
-    border: "1px solid #e5e5e5",
-    borderRadius: 10,
-    padding: 10,
-    background: "#fff",
-  },
-  kpiLabel: {
-    fontSize: 12,
-    opacity: 0.7,
-    marginBottom: 4,
-  },
-  kpiValue: {
-    fontSize: 16,
-    fontWeight: 800,
-  },
-  issueList: {
-    display: "grid",
-    gap: 8,
-  },
-  issueCard: {
-    border: "1px solid #ffd6a5",
-    background: "#fff8ef",
-    borderRadius: 10,
-    padding: 10,
-  },
-  issueTitle: {
-    fontWeight: 700,
-    marginBottom: 4,
-  },
-  issueMeta: {
-    fontSize: 12,
-    opacity: 0.7,
-    marginBottom: 4,
-  },
-  issueText: {
-    fontSize: 13,
-  },
-  fixBox: {
-    marginTop: 10,
-    border: "1px solid #d8dee9",
-    background: "#f8fafc",
-    borderRadius: 10,
-    padding: 10,
-  },
-  fixTitle: {
-    fontWeight: 700,
-    marginBottom: 4,
-  },
-  fixMeta: {
-    fontSize: 12,
-    opacity: 0.75,
-    marginBottom: 6,
-  },
-  fixCode: {
-    margin: 0,
-    background: "#0b1020",
-    color: "#e5e7eb",
-    padding: 10,
-    borderRadius: 8,
-    overflow: "auto",
-    fontSize: 12,
-    whiteSpace: "pre-wrap",
-  },
-};
