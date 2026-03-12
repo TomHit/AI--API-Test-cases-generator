@@ -19,7 +19,18 @@ Rules: method uppercase. test_type must be one of contract/schema/negative/auth.
 function nowIso() {
   return new Date().toISOString();
 }
+function ensureCaseId(tc, suiteId = "suite", index = 1) {
+  if (tc.id && String(tc.id).trim()) return tc.id;
 
+  const method = tc.api_details?.method || "API";
+  const path = (tc.api_details?.path || "endpoint")
+    .replace(/[{}]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+
+  return `TC_${suiteId.toUpperCase()}_${method}_${path}_${String(index).padStart(3, "0")}`;
+}
 function safeParseJson(text) {
   try {
     return text ? JSON.parse(text) : null;
@@ -758,7 +769,51 @@ export async function generateTestPlan(payload) {
     };
     throw err;
   }
+  function normalizePriority(priority) {
+    const p = String(priority || "").toUpperCase();
 
+    if (p === "P0") return "critical";
+    if (p === "P1") return "high";
+    if (p === "P2") return "medium";
+    if (p === "P3") return "low";
+
+    const low = String(priority || "").toLowerCase();
+    if (["low", "medium", "high", "critical"].includes(low)) return low;
+
+    return "medium";
+  }
+
+  function normalizeTestData(testData = {}) {
+    return {
+      path_params: testData.path_params || {},
+      query_params: testData.query_params || {},
+      headers: testData.headers || {},
+      cookies: testData.cookies || {},
+      request_body:
+        testData.request_body !== undefined ? testData.request_body : {},
+    };
+  }
+
+  obj.generation = {
+    ...(obj.generation || {}),
+    mode: payload.generation_mode || obj.generation?.mode || "balanced",
+  };
+
+  for (const suite of obj.suites || []) {
+    suite.endpoints = (suite.endpoints || []).map((ep) => {
+      if (typeof ep === "string") return ep;
+      if (ep && ep.method && ep.path) {
+        return `${String(ep.method).toUpperCase()} ${ep.path}`;
+      }
+      return String(ep || "");
+    });
+
+    (suite.cases || []).forEach((tc, idx) => {
+      tc.id = ensureCaseId(tc, suite.suite_id || "suite", idx + 1);
+      tc.priority = normalizePriority(tc.priority);
+      tc.test_data = normalizeTestData(tc.test_data);
+    });
+  }
   await validateTestPlanOrThrow(obj);
 
   const report = buildReport(obj);

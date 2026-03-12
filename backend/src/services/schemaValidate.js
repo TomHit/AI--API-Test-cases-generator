@@ -1,9 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
-import Ajv from "ajv";
+import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
-const ajv = new Ajv({
+const ajv = new Ajv2020({
   allErrors: true,
   strict: false,
   allowUnionTypes: true,
@@ -13,35 +13,43 @@ addFormats(ajv);
 
 let validateFn = null;
 
+async function loadJson(filePath) {
+  let raw;
+  try {
+    raw = await fs.readFile(filePath, "utf-8");
+  } catch (e) {
+    const err = new Error(`Unable to read schema file at: ${filePath}`);
+    err.details = { schemaPath: filePath, cause: String(e?.message || e) };
+    throw err;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    const err = new Error(`Invalid JSON in schema file: ${filePath}`);
+    err.details = { schemaPath: filePath, cause: String(e?.message || e) };
+    throw err;
+  }
+}
+
 export async function getValidator() {
   if (validateFn) return validateFn;
 
-  const schemaPath = path.join(
-    process.cwd(),
-    "src",
-    "schema",
-    "testplan.schema.json",
+  const schemaDir = path.join(process.cwd(), "src", "schema");
+
+  const testCaseSchemaPath = path.join(schemaDir, "test_case.schema.json");
+  const testPlanSchemaPath = path.join(schemaDir, "test_plan.schema.json");
+
+  const testCaseSchema = await loadJson(testCaseSchemaPath);
+  const testPlanSchema = await loadJson(testPlanSchemaPath);
+
+  ajv.addSchema(
+    testCaseSchema,
+    testCaseSchema.$id || "./test_case.schema.json",
   );
+  ajv.addSchema(testCaseSchema, "./test_case.schema.json");
 
-  let raw;
-  try {
-    raw = await fs.readFile(schemaPath, "utf-8");
-  } catch (e) {
-    const err = new Error(`Unable to read schema file at: ${schemaPath}`);
-    err.details = { schemaPath, cause: String(e?.message || e) };
-    throw err;
-  }
-
-  let schema;
-  try {
-    schema = JSON.parse(raw);
-  } catch (e) {
-    const err = new Error(`Invalid JSON in schema file: ${schemaPath}`);
-    err.details = { schemaPath, cause: String(e?.message || e) };
-    throw err;
-  }
-
-  validateFn = ajv.compile(schema);
+  validateFn = ajv.compile(testPlanSchema);
   return validateFn;
 }
 
