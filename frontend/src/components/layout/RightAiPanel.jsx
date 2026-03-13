@@ -26,27 +26,6 @@ const PANEL_CONTENT = {
     ],
   },
 
-  generate: {
-    cards: [
-      {
-        title: "Generation Tips",
-        list: [
-          "Select endpoints before generating test cases.",
-          "Use Recommended for fast contract coverage.",
-          "Use Strict mode for production-ready specs.",
-        ],
-      },
-      {
-        title: "Coverage Snapshot",
-        metrics: [
-          ["Projects", "4"],
-          ["Endpoints", "107"],
-          ["Generated tests", "1,240"],
-        ],
-      },
-    ],
-  },
-
   testCases: {
     cards: [
       {

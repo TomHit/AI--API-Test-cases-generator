@@ -8,66 +8,128 @@ function reviewLabel(needsReview) {
   return needsReview ? "Yes" : "No";
 }
 
+function typeTone(type) {
+  const value = String(type || "").toLowerCase();
+
+  if (value === "contract") return { bg: "#eef2ff", color: "#4338ca" };
+  if (value === "schema") return { bg: "#ecfeff", color: "#155e75" };
+  if (value === "negative") return { bg: "#fff7ed", color: "#c2410c" };
+  if (value === "auth") return { bg: "#fdf2f8", color: "#be185d" };
+
+  return { bg: "#f1f5f9", color: "#334155" };
+}
+
+function methodTone(method) {
+  const m = String(method || "").toUpperCase();
+
+  if (m === "GET") return { bg: "#ecfdf5", color: "#166534" };
+  if (m === "POST") return { bg: "#eef2ff", color: "#4338ca" };
+  if (m === "PUT") return { bg: "#eff6ff", color: "#1d4ed8" };
+  if (m === "PATCH") return { bg: "#fff7ed", color: "#c2410c" };
+  if (m === "DELETE") return { bg: "#fef2f2", color: "#b91c1c" };
+
+  return { bg: "#f1f5f9", color: "#334155" };
+}
+
+function ReviewPill({ needsReview }) {
+  return (
+    <span
+      style={{
+        ...styles.pill,
+        ...(needsReview ? styles.reviewPillWarn : styles.reviewPillOk),
+      }}
+    >
+      {reviewLabel(needsReview)}
+    </span>
+  );
+}
+
+function InfoCard({ label, children, mono = false }) {
+  return (
+    <div style={styles.metaCard}>
+      <div style={styles.metaLabel}>{label}</div>
+      <div style={mono ? styles.mono : styles.metaValue}>{children}</div>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <section style={styles.section}>
+      <div style={styles.sectionTitle}>{title}</div>
+      {children}
+    </section>
+  );
+}
+
 export default function TestCaseDrawer({ open, row, onClose }) {
   if (!open) return null;
+
+  const testTypeTone = typeTone(row?.test_type);
+  const httpTone = methodTone(row?.api_details?.method);
 
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.drawer} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
-          <div>
+          <div style={styles.headerLeft}>
+            <div style={styles.topRow}>
+              <span
+                style={{
+                  ...styles.badge,
+                  background: testTypeTone.bg,
+                  color: testTypeTone.color,
+                }}
+              >
+                {row?.test_type || "-"}
+              </span>
+
+              <span
+                style={{
+                  ...styles.badge,
+                  background: httpTone.bg,
+                  color: httpTone.color,
+                }}
+              >
+                {row?.api_details?.method || "-"}
+              </span>
+
+              <ReviewPill needsReview={row?.needs_review} />
+            </div>
+
             <div style={styles.title}>{row?.id || "Test Case"}</div>
             <div style={styles.sub}>{row?.title || ""}</div>
           </div>
-          <button style={styles.btn} onClick={onClose}>
+
+          <button style={styles.closeBtn} onClick={onClose} type="button">
             ✕
           </button>
         </div>
 
         <div style={styles.metaGrid}>
-          <div style={styles.metaCard}>
-            <div style={styles.metaLabel}>Module</div>
-            <div>{row?.module || "-"}</div>
-          </div>
+          <InfoCard label="Module">{row?.module || "-"}</InfoCard>
+          <InfoCard label="Priority">{row?.priority || "-"}</InfoCard>
+          <InfoCard label="Path" mono>
+            {row?.api_details?.path || "-"}
+          </InfoCard>
+          <InfoCard label="Needs Review">
+            {reviewLabel(row?.needs_review)}
+          </InfoCard>
+        </div>
 
-          <div style={styles.metaCard}>
-            <div style={styles.metaLabel}>Type</div>
-            <div>{row?.test_type || "-"}</div>
-          </div>
-
-          <div style={styles.metaCard}>
-            <div style={styles.metaLabel}>Priority</div>
-            <div>{row?.priority || "-"}</div>
-          </div>
-
-          <div style={styles.metaCard}>
-            <div style={styles.metaLabel}>Method</div>
-            <div>{row?.api_details?.method || "-"}</div>
-          </div>
-
-          <div style={styles.metaCard}>
-            <div style={styles.metaLabel}>Path</div>
-            <div style={styles.mono}>{row?.api_details?.path || "-"}</div>
-          </div>
-
-          <div style={styles.metaCard}>
-            <div style={styles.metaLabel}>Needs Review</div>
-            <div>{reviewLabel(row?.needs_review)}</div>
-          </div>
-
-          <div style={styles.metaCardFull}>
+        <div style={styles.fullWidthCards}>
+          <div style={styles.metaCardWide}>
             <div style={styles.metaLabel}>Objective</div>
-            <div>{row?.objective || "-"}</div>
+            <div style={styles.metaWideValue}>{row?.objective || "-"}</div>
           </div>
 
-          <div style={styles.metaCardFull}>
+          <div style={styles.metaCardWide}>
             <div style={styles.metaLabel}>Review Notes</div>
-            <div>{row?.review_notes || "-"}</div>
+            <div style={styles.metaWideValue}>{row?.review_notes || "-"}</div>
           </div>
         </div>
 
-        <div style={styles.section}>
-          <div style={styles.h}>Preconditions</div>
+        <Section title="Preconditions">
           {Array.isArray(row?.preconditions) && row.preconditions.length > 0 ? (
             <ul style={styles.list}>
               {row.preconditions.map((p, i) => (
@@ -77,15 +139,13 @@ export default function TestCaseDrawer({ open, row, onClose }) {
           ) : (
             <div style={styles.empty}>No preconditions</div>
           )}
-        </div>
+        </Section>
 
-        <div style={styles.section}>
-          <div style={styles.h}>Test Data</div>
+        <Section title="Test Data">
           <pre style={styles.code}>{pretty(row?.test_data || {})}</pre>
-        </div>
+        </Section>
 
-        <div style={styles.section}>
-          <div style={styles.h}>Steps</div>
+        <Section title="Steps">
           {Array.isArray(row?.steps) && row.steps.length > 0 ? (
             <ol style={styles.list}>
               {row.steps.map((s, i) => (
@@ -95,10 +155,9 @@ export default function TestCaseDrawer({ open, row, onClose }) {
           ) : (
             <div style={styles.empty}>No steps</div>
           )}
-        </div>
+        </Section>
 
-        <div style={styles.section}>
-          <div style={styles.h}>Expected Results</div>
+        <Section title="Expected Results">
           {Array.isArray(row?.expected_results) &&
           row.expected_results.length > 0 ? (
             <ul style={styles.list}>
@@ -109,10 +168,9 @@ export default function TestCaseDrawer({ open, row, onClose }) {
           ) : (
             <div style={styles.empty}>No expected results</div>
           )}
-        </div>
+        </Section>
 
-        <div style={styles.section}>
-          <div style={styles.h}>Validation Focus</div>
+        <Section title="Validation Focus">
           {Array.isArray(row?.validation_focus) &&
           row.validation_focus.length > 0 ? (
             <ul style={styles.list}>
@@ -123,10 +181,9 @@ export default function TestCaseDrawer({ open, row, onClose }) {
           ) : (
             <div style={styles.empty}>No validation focus</div>
           )}
-        </div>
+        </Section>
 
-        <div style={styles.section}>
-          <div style={styles.h}>References</div>
+        <Section title="References">
           {Array.isArray(row?.references) && row.references.length > 0 ? (
             <ul style={styles.list}>
               {row.references.map((r, i) => (
@@ -136,7 +193,7 @@ export default function TestCaseDrawer({ open, row, onClose }) {
           ) : (
             <div style={styles.empty}>No references</div>
           )}
-        </div>
+        </Section>
       </div>
     </div>
   );
@@ -146,79 +203,201 @@ const styles = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.35)",
+    background: "rgba(15, 23, 42, 0.38)",
     display: "flex",
     justifyContent: "flex-end",
-    zIndex: 50,
+    zIndex: 60,
+    backdropFilter: "blur(2px)",
   },
+
   drawer: {
-    width: 680,
-    maxWidth: "95vw",
+    width: 720,
+    maxWidth: "96vw",
     height: "100%",
-    background: "#fff",
-    padding: 16,
-    borderLeft: "1px solid #eee",
+    background: "#ffffff",
+    padding: 20,
+    borderLeft: "1px solid #e6eaf2",
     overflow: "auto",
+    boxShadow: "-16px 0 40px rgba(15, 23, 42, 0.12)",
   },
+
   header: {
     display: "flex",
     justifyContent: "space-between",
-    gap: 10,
+    gap: 14,
     alignItems: "flex-start",
+    paddingBottom: 16,
+    marginBottom: 16,
+    borderBottom: "1px solid #eef2f7",
   },
-  title: { fontSize: 16, fontWeight: 900 },
-  sub: { fontSize: 13, opacity: 0.75, marginTop: 2 },
-  btn: {
-    padding: "6px 10px",
-    borderRadius: 10,
-    border: "1px solid #ddd",
+
+  headerLeft: {
+    minWidth: 0,
+  },
+
+  topRow: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  title: {
+    fontSize: 20,
+    fontWeight: 900,
+    color: "#0f172a",
+    lineHeight: 1.2,
+    marginBottom: 4,
+    wordBreak: "break-word",
+  },
+
+  sub: {
+    fontSize: 14,
+    color: "#64748b",
+    lineHeight: 1.45,
+    wordBreak: "break-word",
+  },
+
+  closeBtn: {
+    padding: "8px 12px",
+    borderRadius: 12,
+    border: "1px solid #d6dce8",
     background: "#fff",
     cursor: "pointer",
+    fontWeight: 700,
+    color: "#0f172a",
+    flexShrink: 0,
   },
+
+  badge: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+
+  pill: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+
+  reviewPillWarn: {
+    background: "#fff7d6",
+    color: "#92400e",
+    border: "1px solid #fde68a",
+  },
+
+  reviewPillOk: {
+    background: "#ecfdf5",
+    color: "#166534",
+    border: "1px solid #bbf7d0",
+  },
+
   metaGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 10,
-    marginTop: 14,
+    gap: 12,
+    marginTop: 4,
   },
+
   metaCard: {
-    border: "1px solid #eee",
-    borderRadius: 12,
-    padding: 10,
-    background: "#fafafa",
+    border: "1px solid #e6eaf2",
+    borderRadius: 14,
+    padding: 12,
+    background: "#f8fafc",
+    minWidth: 0,
   },
-  metaCardFull: {
-    gridColumn: "1 / -1",
-    border: "1px solid #eee",
-    borderRadius: 12,
-    padding: 10,
-    background: "#fafafa",
+
+  metaCardWide: {
+    border: "1px solid #e6eaf2",
+    borderRadius: 14,
+    padding: 12,
+    background: "#f8fafc",
+    minWidth: 0,
   },
+
+  fullWidthCards: {
+    display: "grid",
+    gap: 12,
+    marginTop: 12,
+  },
+
   metaLabel: {
     fontSize: 12,
     fontWeight: 800,
-    opacity: 0.7,
-    marginBottom: 4,
+    color: "#64748b",
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
   },
-  section: { marginTop: 14 },
-  h: { fontWeight: 900, marginBottom: 6 },
+
+  metaValue: {
+    fontSize: 14,
+    color: "#0f172a",
+    lineHeight: 1.45,
+    wordBreak: "break-word",
+  },
+
+  metaWideValue: {
+    fontSize: 14,
+    color: "#0f172a",
+    lineHeight: 1.55,
+    wordBreak: "break-word",
+  },
+
+  section: {
+    marginTop: 16,
+    border: "1px solid #e6eaf2",
+    borderRadius: 16,
+    background: "#ffffff",
+    padding: 14,
+  },
+
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: 900,
+    color: "#0f172a",
+    marginBottom: 10,
+  },
+
   mono: {
-    fontFamily: "ui-monospace, Menlo, monospace",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: 12,
-    opacity: 0.85,
+    color: "#334155",
     wordBreak: "break-all",
+    lineHeight: 1.5,
   },
-  list: { marginTop: 6, paddingLeft: 18 },
+
+  list: {
+    marginTop: 4,
+    paddingLeft: 20,
+    color: "#334155",
+    lineHeight: 1.6,
+  },
+
   empty: {
     fontSize: 13,
-    opacity: 0.7,
+    color: "#64748b",
   },
+
   code: {
-    background: "#0b1020",
-    color: "#e5e7eb",
-    padding: 10,
-    borderRadius: 12,
+    background: "#0f172a",
+    color: "#e2e8f0",
+    padding: 12,
+    borderRadius: 14,
     overflow: "auto",
     fontSize: 12,
+    lineHeight: 1.55,
+    margin: 0,
+    border: "1px solid #1e293b",
   },
 };

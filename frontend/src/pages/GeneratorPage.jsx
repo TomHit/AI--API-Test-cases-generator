@@ -3,8 +3,17 @@ import EndpointSelector from "../components/EndpointSelector";
 import GenerationOptions from "../components/GenerationOptions";
 import TestCaseTable from "../components/TestCaseTable";
 import TestCaseDrawer from "../components/TestCaseDrawer";
-import ExportButtons from "../components/ExportButtons";
+import ResultsSummary from "../components/ResultsSummary";
 import { TEST_CASE_CSV_COLUMNS } from "../utils/testCaseColumns";
+
+const RUNNING_STEPS = [
+  "Reading API specification",
+  "Analyzing selected endpoints",
+  "Building contract test cases",
+  "Building schema validation",
+  "Generating negative scenarios",
+  "Preparing final preview",
+];
 
 function safeJsonParse(text) {
   try {
@@ -16,7 +25,6 @@ function safeJsonParse(text) {
 
 function summarizeTestData(testData) {
   if (!testData || typeof testData !== "object") return "-";
-
   const pathCount = Object.keys(testData.path_params || {}).length;
   const queryCount = Object.keys(testData.query_params || {}).length;
   const headerCount = Object.keys(testData.headers || {}).length;
@@ -93,8 +101,11 @@ function buildCsvFromTable(rows) {
   return lines.join("\n");
 }
 
-function getSpecSummary(specQuality) {
-  return specQuality?.summary || null;
+function getStatusTone(status) {
+  if (status === "running") return "#4338ca";
+  if (status === "done") return "#166534";
+  if (status === "error") return "#991b1b";
+  return "#334155";
 }
 
 export default function GeneratorPage({ projectId, onBack }) {
@@ -132,11 +143,31 @@ export default function GeneratorPage({ projectId, onBack }) {
 
   const [activeTab, setActiveTab] = useState("table");
   const [drawer, setDrawer] = useState({ open: false, row: null });
+  const [runningStepIndex, setRunningStepIndex] = useState(0);
 
   const tableRows = useMemo(
     () => deriveTableRows(run.testplan),
     [run.testplan],
   );
+
+  const selectedCount = (selection.selected_endpoint_ids || []).length;
+  const runningStepLabel =
+    run.status === "running"
+      ? RUNNING_STEPS[runningStepIndex % RUNNING_STEPS.length]
+      : null;
+
+  useEffect(() => {
+    if (run.status !== "running") {
+      setRunningStepIndex(0);
+      return;
+    }
+
+    const id = window.setInterval(() => {
+      setRunningStepIndex((prev) => (prev + 1) % RUNNING_STEPS.length);
+    }, 1100);
+
+    return () => window.clearInterval(id);
+  }, [run.status]);
 
   async function loadEndpoints(specSource = "") {
     if (!projectId) {
@@ -208,7 +239,11 @@ export default function GeneratorPage({ projectId, onBack }) {
 
     const endpointRefs = endpoints
       .filter((e) => selected.includes(e.id))
-      .map((e) => ({ method: e.method, path: e.path, id: e.id }));
+      .map((e) => ({
+        method: e.method,
+        path: e.path,
+        id: e.id,
+      }));
 
     const payload = {
       project_id: projectId,
@@ -305,372 +340,352 @@ export default function GeneratorPage({ projectId, onBack }) {
   }
 
   return (
-    <div className="generator-workspace">
-      <section className="page-card">
-        <div className="section-head generator-topbar">
-          <div>
-            <h3 style={{ margin: 0 }}>Generate Test Cases</h3>
-            <p className="muted" style={{ marginTop: 6 }}>
-              Project: {projectId || "No project selected"}
-            </p>
+    <div style={styles.page}>
+      <style>{`
+        @keyframes pulseShimmer {
+          0% { background-position: 100% 50%; }
+          100% { background-position: 0 50%; }
+        }
+
+        @keyframes buttonSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes dotPulse {
+          0%, 100% { opacity: 0.35; transform: scale(0.9); }
+          50% { opacity: 1; transform: scale(1); }
+        }
+
+        .gen-spinner {
+          width: 16px;
+          height: 16px;
+          border: 2px solid rgba(255,255,255,0.35);
+          border-top-color: #ffffff;
+          border-radius: 999px;
+          display: inline-block;
+          animation: buttonSpin 0.8s linear infinite;
+          flex-shrink: 0;
+        }
+
+        .gen-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #60a5fa;
+          animation: dotPulse 1.1s ease-in-out infinite;
+        }
+
+        .gen-dot:nth-child(2) { animation-delay: 0.12s; }
+        .gen-dot:nth-child(3) { animation-delay: 0.24s; }
+        .gen-dot:nth-child(4) { animation-delay: 0.36s; }
+        .gen-dot:nth-child(5) { animation-delay: 0.48s; }
+
+        @media (max-width: 1240px) {
+          .workspace-body {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 1080px) {
+          .toolbar-right {
+            justify-content: flex-start !important;
+          }
+
+          .workspace-toolbar {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 780px) {
+          .results-header {
+            flex-direction: column !important;
+            align-items: stretch !important;
+          }
+
+          .toolbar-center,
+          .toolbar-right {
+            width: 100%;
+          }
+
+          .toolbar-center > *,
+          .toolbar-right > * {
+            width: 100%;
+          }
+        }
+      `}</style>
+
+      <div style={styles.header}>
+        <div>
+          <div style={styles.eyebrow}>AI test generation workspace</div>
+          <h1 style={styles.heading}>Generate Tests</h1>
+          <p style={styles.subtitle}>
+            Use AI to analyze your spec and produce contract, negative, and auth
+            tests.
+          </p>
+        </div>
+      </div>
+
+      {!projectId && (
+        <div style={styles.notice}>
+          Select a project first from the Projects page to load endpoints and
+          generate AI test cases.
+        </div>
+      )}
+
+      <section style={styles.workspaceShell}>
+        <div className="workspace-toolbar" style={styles.toolbar}>
+          <div style={styles.toolbarLeft}>
+            <div style={styles.toolbarTitle}>Endpoint Explorer</div>
           </div>
 
-          <div className="generator-actions">
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={() => onBack?.()}
-            >
-              ← Back
-            </button>
+          <div className="toolbar-center" style={styles.toolbarCenter}>
+            <div style={styles.countBadge}>
+              {selectedCount} endpoint{selectedCount === 1 ? "" : "s"} selected
+            </div>
 
             <button
               type="button"
-              className="secondary-btn"
-              onClick={() => loadEndpoints()}
-              disabled={endpointsLoading || !projectId}
-            >
-              Reload Endpoints
-            </button>
-
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={() => loadEndpoints(options.spec_source || "")}
-              disabled={!projectId}
-            >
-              Load from Spec URL
-            </button>
-
-            <button
-              type="button"
-              className="primary-btn"
               onClick={generate}
-              disabled={run.status === "running" || !projectId}
+              disabled={
+                !projectId || run.status === "running" || selectedCount === 0
+              }
+              style={{
+                ...styles.primaryBtn,
+                opacity:
+                  !projectId || run.status === "running" || selectedCount === 0
+                    ? 0.7
+                    : 1,
+              }}
             >
-              {run.status === "running" ? "Generating…" : "Generate Test Cases"}
+              {run.status === "running" ? (
+                <>
+                  <span className="gen-spinner" />
+                  <span>Generating...</span>
+                </>
+              ) : (
+                "Generate Tests"
+              )}
+            </button>
+          </div>
+
+          <div className="toolbar-right" style={styles.toolbarRight}>
+            <div style={styles.modeBadge}>
+              {String(
+                run.generation_mode || options.generation_mode,
+              ).toUpperCase()}
+            </div>
+
+            <button
+              type="button"
+              onClick={exportJson}
+              disabled={!run.testplan}
+              style={styles.secondaryBtn}
+            >
+              Export JSON
+            </button>
+
+            <button
+              type="button"
+              onClick={exportCsv}
+              disabled={!tableRows.length}
+              style={styles.secondaryBtn}
+            >
+              CSV
             </button>
           </div>
         </div>
 
-        {!projectId && (
-          <div className="info-box" style={{ marginTop: 14 }}>
-            Select a project first from the Projects page to load endpoints and
-            generate AI test cases.
-          </div>
-        )}
-      </section>
+        <div className="workspace-body" style={styles.workspaceBody}>
+          <aside style={styles.explorerPane}>
+            <div style={styles.explorerHeader}>
+              <div style={styles.explorerSubtle}>Filters</div>
 
-      <div className="generator-grid">
-        <section className="page-card generator-left">
-          <div className="generator-panel-title">Endpoints</div>
+              <div style={styles.inlineBtns}>
+                <button
+                  type="button"
+                  onClick={() => onBack?.()}
+                  style={styles.secondaryBtn}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => loadEndpoints()}
+                  disabled={endpointsLoading || !projectId}
+                  style={styles.secondaryBtn}
+                >
+                  Reload
+                </button>
+              </div>
+            </div>
 
-          {endpointsLoading && (
-            <div className="info-box">Loading endpoints…</div>
-          )}
+            {endpointsLoading && (
+              <div style={styles.infoBox}>Loading endpoints...</div>
+            )}
 
-          {!!endpointsErr && (
-            <div className="error-box">Error: {endpointsErr}</div>
-          )}
+            {!!endpointsErr && (
+              <div style={{ ...styles.infoBox, ...styles.errorInfo }}>
+                Error: {endpointsErr}
+              </div>
+            )}
 
-          {!endpointsLoading && !endpointsErr && projectId && (
-            <EndpointSelector
-              endpoints={endpoints}
-              selection={selection}
-              onChange={setSelection}
-            />
-          )}
-        </section>
+            {!endpointsLoading && !endpointsErr && projectId && (
+              <EndpointSelector
+                endpoints={endpoints}
+                selection={selection}
+                onChange={setSelection}
+              />
+            )}
+          </aside>
 
-        <div className="generator-right">
-          <section className="page-card">
-            <div className="generator-panel-title">Options</div>
+          <div style={styles.setupPane}>
+            <div style={styles.setupHeader}>
+              <div style={styles.panelTitle}>Generation Setup</div>
+              <div style={styles.panelSubtle}>
+                Configure mode, scope, AI enrichment, and spec source.
+              </div>
+            </div>
 
             <GenerationOptions options={options} onChange={setOptions} />
 
-            {run.spec_quality && (
-              <div className="info-box" style={{ marginTop: 14 }}>
-                <div style={{ fontWeight: 800, marginBottom: 10 }}>
-                  Spec Analysis
-                </div>
-
-                <div className="generator-kpi-row">
-                  <div className="generator-kpi-box">
-                    <div className="generator-kpi-label">Mode</div>
-                    <div className="generator-kpi-value">
-                      {run.generation_mode}
-                    </div>
-                  </div>
-
-                  <div className="generator-kpi-box">
-                    <div className="generator-kpi-label">Health</div>
-                    <div className="generator-kpi-value">
-                      {run.spec_quality?.spec_health_score ?? "—"}
-                    </div>
-                  </div>
-
-                  <div className="generator-kpi-box">
-                    <div className="generator-kpi-label">Ready</div>
-                    <div className="generator-kpi-value">
-                      {getSpecSummary(run.spec_quality)?.ready ?? "—"}
-                    </div>
-                  </div>
-
-                  <div className="generator-kpi-box">
-                    <div className="generator-kpi-label">Partial</div>
-                    <div className="generator-kpi-value">
-                      {getSpecSummary(run.spec_quality)?.partial ?? "—"}
-                    </div>
-                  </div>
-
-                  <div className="generator-kpi-box">
-                    <div className="generator-kpi-label">Blocked</div>
-                    <div className="generator-kpi-value">
-                      {getSpecSummary(run.spec_quality)?.blocked ?? "—"}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 12, fontSize: 13 }}>
-                  <b>Total endpoints:</b>{" "}
-                  {getSpecSummary(run.spec_quality)?.total_endpoints ?? "—"}
-                  {" · "}
-                  <b>Eligible:</b> {run.eligible_endpoints?.length ?? 0}
-                  {" · "}
-                  <b>Partial shown:</b> {run.partial_endpoints?.length ?? 0}
-                  {" · "}
-                  <b>Blocked for mode:</b> {run.blocked_endpoints?.length ?? 0}
-                </div>
-
-                {run.partial_endpoints?.length > 0 && (
-                  <div className="generator-warning-text">
-                    Some selected endpoints are usable, but have partial schema
-                    quality issues. Suggested fixes are shown below.
-                  </div>
-                )}
-
-                {run.blocked_endpoints?.length > 0 && (
-                  <div className="generator-warning-text">
-                    Some selected endpoints were excluded for the current
-                    generation mode due to spec issues.
-                  </div>
-                )}
-
-                {run.partial_endpoints?.length > 0 && (
-                  <div style={{ marginTop: 14 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                      Partial Endpoints / Suggestions
-                    </div>
-
-                    <div className="generator-issue-list">
-                      {run.partial_endpoints.map((ep, i) => (
-                        <div
-                          key={`${ep.endpoint_id || i}-partial-${i}`}
-                          className="generator-issue-card"
-                        >
-                          <div className="generator-issue-title">
-                            {ep.method || ep.endpoint_id?.split(" ")[0] || "—"}{" "}
-                            {ep.path ||
-                              ep.endpoint_id?.split(" ").slice(1).join(" ") ||
-                              ""}
-                          </div>
-
-                          <div className="generator-issue-meta">
-                            status: {ep.status || "partial"} · issues:{" "}
-                            {ep.issues_count ?? ep.issues?.length ?? 0}
-                          </div>
-
-                          <div style={{ marginTop: 6 }}>
-                            {(ep.issues || []).map((issue, idx) => (
-                              <div key={idx} style={{ marginBottom: 12 }}>
-                                <div className="generator-issue-text">
-                                  {issue?.message || issue?.code || "-"}
-                                </div>
-
-                                {issue?.suggested_fix && (
-                                  <div className="generator-fix-box">
-                                    <div className="generator-fix-title">
-                                      Suggested Fix
-                                    </div>
-
-                                    <div className="generator-fix-meta">
-                                      {issue.code || "ISSUE"}
-                                      {issue.severity
-                                        ? ` · ${issue.severity}`
-                                        : ""}
-                                      {issue.suggested_fix?.type
-                                        ? ` · Type: ${issue.suggested_fix.type}`
-                                        : ""}
-                                      {issue.suggested_fix?.format
-                                        ? ` · Format: ${issue.suggested_fix.format}`
-                                        : ""}
-                                    </div>
-
-                                    <pre className="generator-fix-code">
-                                      {issue.suggested_fix?.content || ""}
-                                    </pre>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {run.blocked_endpoints?.length > 0 && (
-                  <div style={{ marginTop: 14 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                      Blocked / Excluded Endpoints
-                    </div>
-
-                    <div className="generator-issue-list">
-                      {run.blocked_endpoints.map((ep, i) => (
-                        <div
-                          key={`${ep.endpoint_id || i}-blocked-${i}`}
-                          className="generator-issue-card"
-                        >
-                          <div className="generator-issue-title">
-                            {ep.method || ep.endpoint_id?.split(" ")[0] || "—"}{" "}
-                            {ep.path ||
-                              ep.endpoint_id?.split(" ").slice(1).join(" ") ||
-                              ""}
-                          </div>
-
-                          <div className="generator-issue-meta">
-                            status: {ep.status || "blocked"} · issues:{" "}
-                            {ep.issues_count ?? ep.issues?.length ?? 0}
-                          </div>
-
-                          <div style={{ marginTop: 6 }}>
-                            {(ep.issues || []).map((issue, idx) => (
-                              <div key={idx} style={{ marginBottom: 12 }}>
-                                <div className="generator-issue-text">
-                                  {issue?.message || issue?.code || "-"}
-                                </div>
-
-                                {issue?.suggested_fix && (
-                                  <div className="generator-fix-box">
-                                    <div className="generator-fix-title">
-                                      Suggested Fix
-                                    </div>
-
-                                    <div className="generator-fix-meta">
-                                      {issue.code || "ISSUE"}
-                                      {issue.severity
-                                        ? ` · ${issue.severity}`
-                                        : ""}
-                                      {issue.suggested_fix?.type
-                                        ? ` · Type: ${issue.suggested_fix.type}`
-                                        : ""}
-                                      {issue.suggested_fix?.format
-                                        ? ` · Format: ${issue.suggested_fix.format}`
-                                        : ""}
-                                    </div>
-
-                                    <pre className="generator-fix-code">
-                                      {issue.suggested_fix?.content || ""}
-                                    </pre>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div style={{ marginTop: 14 }}>
-              <ExportButtons
-                disabled={!run.testplan}
-                onExportJson={exportJson}
-                onExportCsv={exportCsv}
-              />
+            <div style={styles.setupActions}>
+              <button
+                type="button"
+                onClick={() => loadEndpoints(options.spec_source || "")}
+                disabled={!projectId}
+                style={styles.secondaryBtn}
+              >
+                Load from Spec URL
+              </button>
             </div>
 
-            {run.report && (
-              <div className="info-box" style={{ marginTop: 14 }}>
-                <b>Report:</b> total={run.report.total_cases ?? "—"},{" "}
-                needs_review={run.report.needs_review ?? "—"}
-                {Array.isArray(run.report.warnings) &&
-                  run.report.warnings.length > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <b>Warnings:</b>
-                      <ul style={{ marginTop: 6 }}>
-                        {run.report.warnings.slice(0, 5).map((w, i) => (
-                          <li key={i}>{w}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-              </div>
-            )}
+            <div
+              style={{
+                ...styles.statusStrip,
+                color: getStatusTone(run.status),
+              }}
+            >
+              <div style={styles.statusLeft}>
+                <span style={styles.statusState}>
+                  {run.status === "idle" && "Ready"}
+                  {run.status === "running" && "Generating"}
+                  {run.status === "done" && "Completed"}
+                  {run.status === "error" && "Failed"}
+                </span>
 
-            {run.status === "error" && (
-              <div className="error-box" style={{ marginTop: 14 }}>
-                <div>Error: {run.error?.message || "Unknown error"}</div>
-                {run.blocked_endpoints?.length > 0 && (
-                  <div style={{ marginTop: 6, fontSize: 13 }}>
-                    See Spec Analysis below for the exact endpoint issue.
+                {run.status === "running" && (
+                  <div style={styles.dotGroup}>
+                    <span className="gen-dot" />
+                    <span className="gen-dot" />
+                    <span className="gen-dot" />
+                    <span className="gen-dot" />
+                    <span className="gen-dot" />
                   </div>
                 )}
+
+                <span style={styles.statusMeta}>
+                  {run.status === "running" && runningStepLabel}
+                  {run.status === "idle" &&
+                    "Select one or more endpoints, then click Generate Tests."}
+                  {run.status === "done" &&
+                    `${tableRows.length} cases generated for ${selectedCount} selected endpoint${selectedCount === 1 ? "" : "s"}.`}
+                  {run.status === "error" &&
+                    (run.error?.message ||
+                      "Something went wrong during generation.")}
+                </span>
               </div>
-            )}
-          </section>
 
-          <section className="page-card generator-preview-card">
-            <div className="generator-preview-header">
-              <div className="generator-panel-title">Preview</div>
-
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  type="button"
-                  className={
-                    activeTab === "table"
-                      ? "generator-tab active"
-                      : "generator-tab"
-                  }
-                  onClick={() => setActiveTab("table")}
-                >
-                  Table View
-                </button>
-
-                <button
-                  type="button"
-                  className={
-                    activeTab === "json"
-                      ? "generator-tab active"
-                      : "generator-tab"
-                  }
-                  onClick={() => setActiveTab("json")}
-                  disabled={!run.testplan}
-                >
-                  JSON View
-                </button>
+              <div style={styles.statusFacts}>
+                <span>{selectedCount} selected</span>
+                <span>
+                  {String(
+                    run.generation_mode || options.generation_mode,
+                  ).toUpperCase()}
+                </span>
               </div>
             </div>
-
-            {activeTab === "table" ? (
-              <TestCaseTable
-                rows={tableRows}
-                onRowClick={(row) => setDrawer({ open: true, row })}
-              />
-            ) : (
-              <pre className="generator-json-box">
-                {run.testplan
-                  ? JSON.stringify(run.testplan, null, 2)
-                  : "No output yet."}
-              </pre>
-            )}
-          </section>
+          </div>
         </div>
-      </div>
+      </section>
+
+      <section style={styles.resultsSection}>
+        <div className="results-header" style={styles.resultsHeader}>
+          <div>
+            <div style={styles.panelTitle}>Results</div>
+            <div style={styles.panelSubtle}>
+              Compact preview for scanning. Open any row for full detail.
+            </div>
+          </div>
+
+          <div style={styles.tabRow}>
+            <button
+              type="button"
+              onClick={() => setActiveTab("table")}
+              style={{
+                ...styles.tabBtn,
+                ...(activeTab === "table" ? styles.tabBtnActive : {}),
+              }}
+            >
+              Table View
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("json")}
+              disabled={!run.testplan}
+              style={{
+                ...styles.tabBtn,
+                ...(activeTab === "json" ? styles.tabBtnActive : {}),
+                opacity: !run.testplan ? 0.6 : 1,
+              }}
+            >
+              JSON View
+            </button>
+          </div>
+        </div>
+
+        {run.status === "done" && (
+          <div style={{ marginBottom: 18 }}>
+            <ResultsSummary
+              rows={tableRows}
+              report={run.report}
+              testplan={run.testplan}
+            />
+          </div>
+        )}
+
+        {run.status === "running" && (
+          <div style={styles.resultsProgress}>
+            <div style={styles.resultsProgressTop}>
+              <span>Building test cases now...</span>
+              <div style={styles.dotGroup}>
+                <span className="gen-dot" />
+                <span className="gen-dot" />
+                <span className="gen-dot" />
+                <span className="gen-dot" />
+                <span className="gen-dot" />
+              </div>
+            </div>
+            <div style={styles.resultsProgressBarTrack}>
+              <div style={styles.resultsProgressBarFill} />
+            </div>
+          </div>
+        )}
+
+        {activeTab === "table" ? (
+          <TestCaseTable
+            rows={tableRows}
+            loading={run.status === "running"}
+            onRowClick={(row) => setDrawer({ open: true, row })}
+          />
+        ) : (
+          <pre style={styles.jsonBox}>
+            {run.testplan
+              ? JSON.stringify(run.testplan, null, 2)
+              : "No output yet."}
+          </pre>
+        )}
+      </section>
 
       <TestCaseDrawer
         open={drawer.open}
@@ -680,3 +695,357 @@ export default function GeneratorPage({ projectId, onBack }) {
     </div>
   );
 }
+
+const styles = {
+  page: {
+    display: "grid",
+    gap: 18,
+    padding: "28px 24px 40px",
+    maxWidth: 1320,
+    margin: "0 auto",
+    background: "#f8fafc",
+  },
+
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 20,
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#6366f1",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+
+  heading: {
+    margin: 0,
+    fontSize: 34,
+    lineHeight: 1.05,
+    color: "#0f172a",
+  },
+
+  subtitle: {
+    marginTop: 10,
+    marginBottom: 0,
+    color: "#64748b",
+    maxWidth: 720,
+    lineHeight: 1.5,
+    fontSize: 15,
+  },
+
+  countBadge: {
+    padding: "10px 14px",
+    borderRadius: 999,
+    background: "#eef2ff",
+    color: "#4338ca",
+    fontWeight: 700,
+    fontSize: 13,
+    whiteSpace: "nowrap",
+  },
+
+  primaryBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    padding: "12px 18px",
+    minWidth: 250,
+    borderRadius: 16,
+    border: "none",
+    background: "linear-gradient(90deg, #8b5cf6 0%, #4f7cff 100%)",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+    boxShadow: "0 14px 30px rgba(79, 70, 229, 0.18)",
+    whiteSpace: "nowrap",
+  },
+
+  secondaryBtn: {
+    padding: "10px 14px",
+    borderRadius: 14,
+    border: "1px solid #d6dce8",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 700,
+    color: "#0f172a",
+    whiteSpace: "nowrap",
+  },
+
+  modeBadge: {
+    padding: "10px 18px",
+    borderRadius: 18,
+    background: "#ffffff",
+    border: "1px solid #dbe3f0",
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+
+  notice: {
+    padding: 16,
+    borderRadius: 16,
+    background: "#fff7ed",
+    border: "1px solid #fed7aa",
+    color: "#9a3412",
+  },
+
+  workspaceShell: {
+    border: "1px solid #e6eaf2",
+    borderRadius: 24,
+    background: "#fff",
+    boxShadow: "0 10px 32px rgba(15, 23, 42, 0.05)",
+    overflow: "hidden",
+  },
+
+  toolbar: {
+    display: "grid",
+    gridTemplateColumns: "220px minmax(0, 1fr) auto",
+    gap: 16,
+    alignItems: "center",
+    padding: "16px 20px",
+    borderBottom: "1px solid #eef2f7",
+  },
+
+  toolbarLeft: {
+    display: "flex",
+    alignItems: "center",
+    minWidth: 0,
+  },
+
+  toolbarCenter: {
+    display: "flex",
+    gap: 14,
+    alignItems: "center",
+    flexWrap: "wrap",
+    minWidth: 0,
+  },
+
+  toolbarRight: {
+    display: "flex",
+    gap: 12,
+    alignItems: "center",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+
+  toolbarTitle: {
+    fontSize: 18,
+    fontWeight: 800,
+    color: "#0f172a",
+    whiteSpace: "nowrap",
+  },
+
+  workspaceBody: {
+    display: "grid",
+    gridTemplateColumns: "480px minmax(0, 1fr)",
+    alignItems: "stretch",
+  },
+
+  explorerPane: {
+    padding: 20,
+    borderRight: "1px solid #eef2f7",
+    minWidth: 0,
+  },
+
+  explorerHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "center",
+    marginBottom: 14,
+    flexWrap: "wrap",
+  },
+
+  explorerSubtle: {
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#334155",
+  },
+
+  setupPane: {
+    padding: 20,
+    minWidth: 0,
+  },
+
+  setupHeader: {
+    marginBottom: 16,
+  },
+
+  setupActions: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    marginTop: 14,
+  },
+
+  panelTitle: {
+    fontSize: 20,
+    fontWeight: 800,
+    color: "#0f172a",
+    marginBottom: 6,
+    lineHeight: 1.2,
+  },
+
+  panelSubtle: {
+    fontSize: 14,
+    color: "#64748b",
+    lineHeight: 1.5,
+    maxWidth: 620,
+  },
+
+  inlineBtns: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+
+  infoBox: {
+    padding: 14,
+    borderRadius: 12,
+    background: "#f8fafc",
+    border: "1px solid #e6eaf2",
+    color: "#475569",
+  },
+
+  errorInfo: {
+    background: "#fef2f2",
+    borderColor: "#fecaca",
+    color: "#991b1b",
+  },
+
+  statusStrip: {
+    marginTop: 16,
+    borderRadius: 14,
+    border: "1px solid #e6eaf2",
+    background: "#f8fafc",
+    padding: "12px 14px",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 14,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+
+  statusLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+    minWidth: 0,
+  },
+
+  statusState: {
+    fontSize: 13,
+    fontWeight: 800,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+    whiteSpace: "nowrap",
+  },
+
+  statusMeta: {
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 1.45,
+  },
+
+  statusFacts: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#334155",
+  },
+
+  dotGroup: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  resultsSection: {
+    border: "1px solid #e6eaf2",
+    borderRadius: 24,
+    padding: 20,
+    background: "#fff",
+    boxShadow: "0 10px 32px rgba(15, 23, 42, 0.05)",
+    minWidth: 0,
+  },
+
+  resultsHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 16,
+    alignItems: "center",
+    marginBottom: 18,
+    flexWrap: "wrap",
+  },
+
+  tabRow: {
+    display: "flex",
+    gap: 10,
+  },
+
+  tabBtn: {
+    padding: "10px 14px",
+    borderRadius: 14,
+    border: "1px solid #d6dce8",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+
+  tabBtnActive: {
+    background: "#eef2ff",
+    borderColor: "#c7d2fe",
+    color: "#3730a3",
+  },
+
+  resultsProgress: {
+    marginBottom: 16,
+    padding: "10px 0 2px",
+  },
+
+  resultsProgressTop: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+    color: "#475569",
+    fontSize: 14,
+    marginBottom: 10,
+  },
+
+  resultsProgressBarTrack: {
+    height: 6,
+    borderRadius: 999,
+    background: "#e8edf7",
+    overflow: "hidden",
+  },
+
+  resultsProgressBarFill: {
+    width: "65%",
+    height: "100%",
+    borderRadius: 999,
+    background: "linear-gradient(90deg, #8b5cf6 0%, #60a5fa 100%)",
+  },
+
+  jsonBox: {
+    margin: 0,
+    padding: 16,
+    borderRadius: 14,
+    background: "#0f172a",
+    color: "#e2e8f0",
+    overflow: "auto",
+    maxHeight: 620,
+    fontSize: 13,
+  },
+};
