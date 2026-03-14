@@ -34,7 +34,7 @@ function buildCandidateSpecUrls(input) {
 }
 
 function parseMaybeYaml(text, filename = "") {
-  const trimmed = (text || "").trim();
+  const trimmed = String(text || "").trim();
   if (!trimmed) throw new Error("OpenAPI is empty");
 
   const looksJson = trimmed.startsWith("{") || trimmed.startsWith("[");
@@ -79,14 +79,41 @@ async function fetchSpecFromCandidates(inputUrl) {
   return { text, resolvedUrl };
 }
 
+function normalizeProjectConfig(cfg = {}, projectId = "") {
+  const project_id = cfg.project_id || projectId;
+  const project_name = cfg.project_name || projectId;
+
+  const legacyMode = cfg?.openapi?.mode;
+  const legacyValue = cfg?.openapi?.value;
+
+  const specSourceType = cfg.spec_source_type || legacyMode || "url";
+  const specSource = cfg.spec_source || legacyValue || "";
+  const specFormat = cfg.spec_format || "auto";
+
+  return {
+    ...cfg,
+    project_id,
+    project_name,
+    spec_source_type: specSourceType,
+    spec_source: specSource,
+    spec_format: specFormat,
+    openapi: {
+      mode: specSourceType,
+      value: specSource,
+      format: specFormat,
+    },
+  };
+}
+
 export async function loadProjectConfig(projectId) {
   const p = path.join(process.cwd(), "projects", projectId, "project.json");
   const raw = await fs.readFile(p, "utf-8");
-  return JSON.parse(raw);
+  const parsed = JSON.parse(raw);
+  return normalizeProjectConfig(parsed, projectId);
 }
 
 export async function loadOpenApiDoc(projectId, opts = {}) {
-  const override = opts?.specSourceOverride;
+  const override = String(opts?.specSourceOverride || "").trim();
 
   if (override) {
     if (!/^https?:\/\//i.test(override)) {
@@ -97,34 +124,54 @@ export async function loadOpenApiDoc(projectId, opts = {}) {
     const doc = parseMaybeYaml(text, resolvedUrl || override);
 
     return {
-      cfg: {
-        project_id: projectId,
-        project_name: projectId,
-        openapi: {
-          mode: "url",
-          value: resolvedUrl || override,
+      cfg: normalizeProjectConfig(
+        {
+          project_id: projectId,
+          project_name: projectId,
+          spec_source_type: "url",
+          spec_source: resolvedUrl || override,
+          spec_format: "auto",
         },
-      },
+        projectId,
+      ),
       doc,
     };
   }
 
   const cfg = await loadProjectConfig(projectId);
-  if (!cfg?.openapi?.value) throw new Error("Project openapi config missing");
+  const specSource = String(cfg.spec_source || "").trim();
+  const specSourceType = String(cfg.spec_source_type || "url").trim();
 
-  const mode =
-    cfg.openapi.mode || (isHttpUrl(cfg.openapi.value) ? "url" : "file");
-  const val = cfg.openapi.value;
-
-  let text = "";
-
-  if (mode === "url" || isHttpUrl(val)) {
-    const { text: fetchedText } = await fetchSpecFromCandidates(val);
-    text = fetchedText;
-    return { cfg, doc: parseMaybeYaml(text, val) };
+  if (!specSource) {
+    throw new Error("Project spec source is missing");
   }
 
-  const full = path.join(process.cwd(), "projects", projectId, val);
-  text = await fs.readFile(full, "utf-8");
-  return { cfg, doc: parseMaybeYaml(text, full) };
+  if (specSourceType === "raw") {
+    return {
+      cfg,
+      doc: parseMaybeYaml(specSource, `${projectId}:inline-spec`),
+    };
+  }
+
+  if (isHttpUrl(specSource)) {
+    const { text, resolvedUrl } = await fetchSpecFromCandidates(specSource);
+    return {
+      cfg: normalizeProjectConfig(
+        {
+          ...cfg,
+          spec_source: resolvedUrl || specSource,
+        },
+        projectId,
+      ),
+      doc: parseMaybeYaml(text, resolvedUrl || specSource),
+    };
+  }
+
+  const full = path.join(process.cwd(), "projects", projectId, specSource);
+  const text = await fs.readFile(full, "utf-8");
+
+  return {
+    cfg,
+    doc: parseMaybeYaml(text, full),
+  };
 }

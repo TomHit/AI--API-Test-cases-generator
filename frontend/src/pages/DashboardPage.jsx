@@ -11,6 +11,7 @@ export default function DashboardPage({
   const [projects, setProjects] = useState([]);
   const [err, setErr] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const [newProject, setNewProject] = useState({
     project_name: "",
@@ -49,36 +50,62 @@ export default function DashboardPage({
     load();
   }, []);
 
-  function handleCreateProject(e) {
+  async function handleCreateProject(e) {
     e.preventDefault();
 
-    if (!newProject.project_name.trim()) {
+    const projectName = newProject.project_name.trim();
+    const specSource = newProject.spec_source.trim();
+
+    if (!projectName) {
       alert("Project name is required.");
       return;
     }
 
-    const created = {
-      project_id: `proj_${Date.now()}`,
-      project_name: newProject.project_name.trim(),
-      description: newProject.description.trim(),
-      env_count: Number(newProject.env_count) || 1,
-      spec_source_type: newProject.spec_source_type || "url",
-      spec_source: newProject.spec_source.trim(),
-      spec_format: newProject.spec_format || "auto",
-      docs_status: newProject.spec_source.trim() ? "ok" : "missing",
-      last_generated_at: null,
-    };
+    setCreating(true);
+    setErr("");
 
-    setProjects((prev) => [created, ...prev]);
-    setShowCreateForm(false);
-    setNewProject({
-      project_name: "",
-      env_count: 1,
-      description: "",
-      spec_source_type: "url",
-      spec_source: "",
-      spec_format: "auto",
-    });
+    try {
+      const payload = {
+        project_name: projectName,
+        env_count: Number(newProject.env_count) || 1,
+        description: newProject.description.trim(),
+        spec_source_type: newProject.spec_source_type || "url",
+        spec_source: specSource,
+        spec_format: newProject.spec_format || "auto",
+      };
+
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+
+      if (!res.ok) {
+        throw new Error(data?.message || `Create failed: ${res.status}`);
+      }
+
+      setProjects((prev) => [data, ...prev]);
+      setShowCreateForm(false);
+
+      setNewProject({
+        project_name: "",
+        env_count: 1,
+        description: "",
+        spec_source_type: "url",
+        spec_source: "",
+        spec_format: "auto",
+      });
+    } catch (e) {
+      setErr(e.message || String(e));
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
@@ -229,11 +256,12 @@ export default function DashboardPage({
                 type="button"
                 className="secondary-btn"
                 onClick={() => setShowCreateForm(false)}
+                disabled={creating}
               >
                 Cancel
               </button>
-              <button type="submit" className="primary-btn">
-                Create Project
+              <button type="submit" className="primary-btn" disabled={creating}>
+                {creating ? "Creating..." : "Create Project"}
               </button>
             </div>
           </form>

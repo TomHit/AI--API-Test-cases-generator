@@ -1,4 +1,6 @@
 import express from "express";
+import fs from "fs/promises";
+import path from "path";
 
 import { generateTestPlan } from "./src/services/generator.js";
 import { renderCsvFromTestPlan } from "./src/services/csvRenderer.js";
@@ -23,20 +25,113 @@ app.use((req, res, next) => {
   next();
 });
 
+const PROJECTS_DIR = path.join(process.cwd(), "projects");
+
+async function ensureProjectsDir() {
+  await fs.mkdir(PROJECTS_DIR, { recursive: true });
+}
+
+async function loadAllProjects() {
+  await ensureProjectsDir();
+
+  const entries = await fs.readdir(PROJECTS_DIR, { withFileTypes: true });
+  const projects = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const projectFile = path.join(PROJECTS_DIR, entry.name, "project.json");
+
+    try {
+      const raw = await fs.readFile(projectFile, "utf-8");
+      const parsed = JSON.parse(raw);
+
+      projects.push({
+        project_id: parsed.project_id,
+        project_name: parsed.project_name,
+        env_count: parsed.env_count ?? 1,
+        docs_status: parsed.docs_status || "missing",
+        description: parsed.description || "",
+        spec_source_type: parsed.spec_source_type || "url",
+        spec_source: parsed.spec_source || parsed?.openapi?.value || "",
+        spec_format: parsed.spec_format || "auto",
+        last_generated_at: parsed.last_generated_at || null,
+      });
+    } catch (err) {
+      console.error("PROJECT READ ERROR:", projectFile, err);
+    }
+  }
+
+  return projects.sort((a, b) =>
+    String(a.project_name || "").localeCompare(String(b.project_name || "")),
+  );
+}
+
 // Health
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
-// Projects (static MVP)
+// Projects list from disk
 app.get("/api/projects", async (req, res) => {
-  res.json([
-    {
-      project_id: "xtl-api",
-      project_name: "XTL API",
-      docs_status: "ok",
-      env_count: 1,
+  try {
+    const projects = await loadAllProjects();
+    res.json(projects);
+  } catch (e) {
+    console.error("PROJECTS ERROR:", e);
+    res.status(500).json({ message: e?.message || String(e) });
+  }
+});
+
+// Create new project
+app.post("/api/projects", async (req, res) => {
+  try {
+    await ensureProjectsDir();
+
+    const body = req.body || {};
+    const projectName = String(body.project_name || "").trim();
+
+    if (!projectName) {
+      return res.status(400).json({ message: "project_name is required" });
+    }
+
+    const projectId = `proj_${Date.now()}`;
+    const projectDir = path.join(PROJECTS_DIR, projectId);
+
+    await fs.mkdir(projectDir, { recursive: true });
+
+    const envCount = Number(body.env_count) || 1;
+    const description = String(body.description || "").trim();
+    const specSourceType = String(body.spec_source_type || "url").trim();
+    const specSource = String(body.spec_source || "").trim();
+    const specFormat = String(body.spec_format || "auto").trim();
+
+    const projectConfig = {
+      project_id: projectId,
+      project_name: projectName,
+      env_count: envCount,
+      description,
+      docs_status: specSource ? "ok" : "missing",
+      spec_source_type: specSourceType,
+      spec_source: specSource,
+      spec_format: specFormat,
       last_generated_at: null,
-    },
-  ]);
+      openapi: {
+        mode: specSourceType === "file" ? "file" : "url",
+        value: specSource,
+        format: specFormat,
+      },
+    };
+
+    await fs.writeFile(
+      path.join(projectDir, "project.json"),
+      JSON.stringify(projectConfig, null, 2),
+      "utf-8",
+    );
+
+    res.status(201).json(projectConfig);
+  } catch (e) {
+    console.error("PROJECT CREATE ERROR:", e);
+    res.status(500).json({ message: e?.message || String(e) });
+  }
 });
 
 // Endpoints list from OpenAPI
