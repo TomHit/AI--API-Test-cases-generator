@@ -15,7 +15,10 @@ export default function DashboardPage({
   const [newProject, setNewProject] = useState({
     project_name: "",
     env_count: 1,
-    docs_status: "missing",
+    description: "",
+    spec_source_type: "url",
+    spec_source: "",
+    spec_format: "auto",
   });
 
   async function load() {
@@ -57,8 +60,12 @@ export default function DashboardPage({
     const created = {
       project_id: `proj_${Date.now()}`,
       project_name: newProject.project_name.trim(),
+      description: newProject.description.trim(),
       env_count: Number(newProject.env_count) || 1,
-      docs_status: newProject.docs_status || "missing",
+      spec_source_type: newProject.spec_source_type || "url",
+      spec_source: newProject.spec_source.trim(),
+      spec_format: newProject.spec_format || "auto",
+      docs_status: newProject.spec_source.trim() ? "ok" : "missing",
       last_generated_at: null,
     };
 
@@ -67,7 +74,10 @@ export default function DashboardPage({
     setNewProject({
       project_name: "",
       env_count: 1,
-      docs_status: "missing",
+      description: "",
+      spec_source_type: "url",
+      spec_source: "",
+      spec_format: "auto",
     });
   }
 
@@ -134,20 +144,83 @@ export default function DashboardPage({
               </div>
 
               <div className="projects-form-full">
-                <label className="projects-label">Docs Status</label>
-                <select
-                  value={newProject.docs_status}
+                <label className="projects-label">Project Description</label>
+                <textarea
+                  value={newProject.description}
                   onChange={(e) =>
                     setNewProject((prev) => ({
                       ...prev,
-                      docs_status: e.target.value,
+                      description: e.target.value,
+                    }))
+                  }
+                  placeholder="Describe this API project"
+                />
+              </div>
+
+              <div>
+                <label className="projects-label">Spec Source Type</label>
+                <select
+                  value={newProject.spec_source_type}
+                  onChange={(e) =>
+                    setNewProject((prev) => ({
+                      ...prev,
+                      spec_source_type: e.target.value,
                     }))
                   }
                 >
-                  <option value="ok">Docs Ready</option>
-                  <option value="missing">Docs Missing</option>
-                  <option value="error">Docs Error</option>
+                  <option value="url">Spec URL</option>
+                  <option value="raw">Paste JSON/YAML</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="projects-label">Spec Format</label>
+                <select
+                  value={newProject.spec_format}
+                  onChange={(e) =>
+                    setNewProject((prev) => ({
+                      ...prev,
+                      spec_format: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="auto">Auto Detect</option>
+                  <option value="openapi-json">OpenAPI JSON</option>
+                  <option value="openapi-yaml">OpenAPI YAML</option>
+                </select>
+              </div>
+
+              <div className="projects-form-full">
+                <label className="projects-label">
+                  {newProject.spec_source_type === "url"
+                    ? "Spec URL"
+                    : "Paste Spec"}
+                </label>
+
+                {newProject.spec_source_type === "url" ? (
+                  <input
+                    type="text"
+                    value={newProject.spec_source}
+                    onChange={(e) =>
+                      setNewProject((prev) => ({
+                        ...prev,
+                        spec_source: e.target.value,
+                      }))
+                    }
+                    placeholder="https://example.com/openapi.json"
+                  />
+                ) : (
+                  <textarea
+                    value={newProject.spec_source}
+                    onChange={(e) =>
+                      setNewProject((prev) => ({
+                        ...prev,
+                        spec_source: e.target.value,
+                      }))
+                    }
+                    placeholder="Paste OpenAPI JSON or YAML here"
+                  />
+                )}
               </div>
             </div>
 

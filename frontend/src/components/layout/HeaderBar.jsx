@@ -40,24 +40,10 @@ const PAGE_META = {
 
 export default function HeaderBar({ activeNav }) {
   const meta = PAGE_META[activeNav] || PAGE_META.overview;
-  const isGeneratePage = activeNav === "generate";
+  const isCompactPage = activeNav === "generate" || activeNav === "testCases";
 
-  if (isGeneratePage) {
-    return (
-      <header className="app-header app-header-compact">
-        <div className="header-spacer" />
-        <div className="header-actions">
-          <input
-            className="header-search"
-            type="text"
-            placeholder="Search projects or APIs"
-          />
-          <button type="button" className="header-profile-btn">
-            HT
-          </button>
-        </div>
-      </header>
-    );
+  if (isCompactPage) {
+    return null;
   }
 
   return (

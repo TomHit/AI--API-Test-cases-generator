@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 function uniqueTags(endpoints) {
   const s = new Set();
@@ -43,17 +43,6 @@ function groupEndpoints(endpoints) {
     .sort((a, b) => a.tag.localeCompare(b.tag));
 }
 
-function SmallIconSearch() {
-  return (
-    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
-      <path
-        d="M13.5 12.3l3.6 3.6-1.2 1.2-3.6-3.6a6 6 0 111.2-1.2zM8.5 13a4.5 4.5 0 100-9 4.5 4.5 0 000 9z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
 export default function EndpointSelector({ endpoints, selection, onChange }) {
   const tags = useMemo(() => uniqueTags(endpoints), [endpoints]);
 
@@ -77,8 +66,26 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
   }, [endpoints, selection]);
 
   const grouped = useMemo(() => groupEndpoints(filtered), [filtered]);
+
   const [collapsedGroups, setCollapsedGroups] = useState({});
 
+  // keep all groups expanded by default like Apidog-style explorer
+  useEffect(() => {
+    const next = {};
+    for (const group of grouped) {
+      next[group.tag] = true;
+    }
+
+    setCollapsedGroups((prev) => {
+      const merged = { ...prev };
+      for (const group of grouped) {
+        if (!(group.tag in merged)) {
+          merged[group.tag] = true;
+        }
+      }
+      return merged;
+    });
+  }, [grouped]);
   function toggle(id) {
     const sel = new Set(selection.selected_endpoint_ids || []);
     if (sel.has(id)) sel.delete(id);
@@ -123,22 +130,24 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
 
   return (
     <div style={styles.wrap}>
-      <div style={styles.toolbarCard}>
-        <div style={styles.searchWrap}>
-          <span style={styles.searchIcon}>
-            <SmallIconSearch />
-          </span>
-          <input
-            style={styles.searchInput}
-            placeholder="Search endpoints..."
-            value={selection.filter.q}
-            onChange={(e) => setFilter({ q: e.target.value })}
-          />
+      <div style={styles.topBar}>
+        <div style={styles.topMeta}>
+          <div style={styles.treeHeaderTitle}>Endpoints</div>
+          <div style={styles.treeHeaderMeta}>
+            {filtered.length} visible / {endpoints.length} total
+          </div>
         </div>
 
-        <div style={styles.compactToolbar}>
+        <div style={styles.topActions}>
+          <input
+            style={styles.searchInput}
+            placeholder="Filter endpoints"
+            value={selection.filter.q || ""}
+            onChange={(e) => setFilter({ q: e.target.value })}
+          />
+
           <select
-            style={styles.select}
+            style={styles.selectCompact}
             value={selection.filter.method}
             onChange={(e) => setFilter({ method: e.target.value })}
           >
@@ -151,11 +160,11 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
           </select>
 
           <select
-            style={styles.select}
+            style={styles.selectCompact}
             value={selection.filter.tag}
             onChange={(e) => setFilter({ tag: e.target.value })}
           >
-            <option value="ALL">All endpoints</option>
+            <option value="ALL">All groups</option>
             {tags
               .filter((t) => t !== "ALL")
               .map((t) => (
@@ -165,42 +174,35 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
               ))}
           </select>
         </div>
+      </div>
 
-        <div style={styles.toolbarBottom}>
-          <label style={styles.checkboxRow}>
-            <input
-              type="checkbox"
-              checked={!!selection.filter.authOnly}
-              onChange={(e) => setFilter({ authOnly: e.target.checked })}
-            />
-            <span>Auth only</span>
-          </label>
+      <div style={styles.toolbarInline}>
+        <label style={styles.checkboxRow}>
+          <input
+            type="checkbox"
+            checked={!!selection.filter.authOnly}
+            onChange={(e) => setFilter({ authOnly: e.target.checked })}
+          />
+          <span>Auth only</span>
+        </label>
 
-          <div style={styles.inlineBtns}>
-            <button type="button" style={styles.btn} onClick={selectAllVisible}>
-              Select visible
-            </button>
-            <button type="button" style={styles.btn} onClick={clearAll}>
-              Clear
-            </button>
-          </div>
+        <div style={styles.inlineBtns}>
+          <button type="button" style={styles.btn} onClick={selectAllVisible}>
+            Select visible
+          </button>
+          <button type="button" style={styles.btn} onClick={clearAll}>
+            Clear
+          </button>
         </div>
       </div>
 
       <div style={styles.treeShell}>
-        <div style={styles.treeHeader}>
-          <div style={styles.treeHeaderTitle}>All endpoints</div>
-          <div style={styles.treeHeaderMeta}>
-            {filtered.length} visible / {endpoints.length} total
-          </div>
-        </div>
-
         <div style={styles.treeScroll}>
           {grouped.length === 0 && (
             <div style={styles.emptyState}>
               <div style={styles.emptyTitle}>No endpoints found</div>
               <div style={styles.emptySubtle}>
-                Try changing the search text or filters.
+                Try changing the search or filters.
               </div>
             </div>
           )}
@@ -277,7 +279,7 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
                           </span>
 
                           <div style={styles.endpointContent}>
-                            <div style={styles.endpointTitleRow}>
+                            <div style={styles.endpointTopLine}>
                               <span style={styles.endpointName}>
                                 {e.summary || e.path}
                               </span>
@@ -318,179 +320,161 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
 const styles = {
   wrap: {
     display: "grid",
-    gap: 12,
+    gap: 4,
     minWidth: 0,
     width: "100%",
     height: "100%",
   },
 
-  toolbarCard: {
+  topBar: {
     display: "grid",
-    gap: 10,
-    padding: 12,
-    border: "1px solid #e7edf5",
-    borderRadius: 16,
-    background: "#ffffff",
-    flexShrink: 0,
+    gap: 4,
+    padding: "0 2px 2px",
   },
 
-  searchWrap: {
-    position: "relative",
-    width: "100%",
+  topMeta: {
+    display: "grid",
+    gap: 0,
   },
 
-  searchIcon: {
-    position: "absolute",
-    left: 12,
-    top: "50%",
-    transform: "translateY(-50%)",
-    color: "#64748b",
-    display: "inline-flex",
+  topActions: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1.15fr) 0.85fr 0.85fr",
+    gap: 6,
     alignItems: "center",
-    justifyContent: "center",
-    pointerEvents: "none",
+  },
+
+  treeHeaderTitle: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#0f172a",
+    lineHeight: 1.05,
+  },
+
+  treeHeaderMeta: {
+    fontSize: 11,
+    color: "#64748b",
+    lineHeight: 1.05,
   },
 
   searchInput: {
-    padding: "11px 12px 11px 36px",
-    borderRadius: 14,
-    border: "1px solid #dbe3f0",
     width: "100%",
-    boxSizing: "border-box",
+    minHeight: 32,
+    height: 32,
+    padding: "5px 9px",
+    border: "1px solid #dbe3f0",
+    borderRadius: 8,
     background: "#fff",
-    fontSize: 14,
+    fontSize: 12,
     color: "#0f172a",
     outline: "none",
   },
 
-  compactToolbar: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 10,
-  },
-
-  select: {
-    padding: "10px 12px",
-    borderRadius: 12,
+  selectCompact: {
+    width: "100%",
+    minHeight: 32,
+    height: 32,
+    padding: "5px 9px",
+    borderRadius: 8,
     border: "1px solid #dbe3f0",
     background: "#fff",
-    fontSize: 14,
+    fontSize: 12,
     color: "#0f172a",
     outline: "none",
   },
 
-  toolbarBottom: {
+  toolbarInline: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
+    gap: 8,
     flexWrap: "wrap",
+    padding: "0 2px 4px",
   },
 
   checkboxRow: {
     display: "flex",
-    gap: 8,
+    gap: 6,
     alignItems: "center",
-    fontSize: 13,
-    color: "#334155",
+    fontSize: 11,
+    color: "#475569",
     fontWeight: 600,
   },
 
   inlineBtns: {
     display: "flex",
-    gap: 8,
+    gap: 6,
     flexWrap: "wrap",
   },
 
   btn: {
-    padding: "8px 10px",
+    padding: "4px 8px",
     border: "1px solid #d6dce8",
-    borderRadius: 10,
+    borderRadius: 8,
     background: "#fff",
     cursor: "pointer",
     fontWeight: 700,
     color: "#0f172a",
     whiteSpace: "nowrap",
-    fontSize: 12,
+    fontSize: 11,
+    lineHeight: 1.1,
   },
 
   treeShell: {
     border: "1px solid #e7edf5",
-    borderRadius: 16,
-    background: "#fcfdff",
-    minHeight: 320,
-    display: "grid",
-    gridTemplateRows: "auto minmax(0, 1fr)",
-    overflow: "hidden",
-  },
-
-  treeHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
-    padding: "10px 12px",
-    borderBottom: "1px solid #edf2f7",
+    borderRadius: 10,
     background: "#ffffff",
-  },
-
-  treeHeaderTitle: {
-    fontSize: 13,
-    fontWeight: 800,
-    color: "#0f172a",
-  },
-
-  treeHeaderMeta: {
-    fontSize: 12,
-    color: "#64748b",
-    whiteSpace: "nowrap",
+    minHeight: 420,
+    overflow: "visible",
   },
 
   treeScroll: {
-    overflow: "auto",
-    padding: 8,
+    overflow: "visible",
+    padding: 2,
     minHeight: 0,
   },
 
   groupBlock: {
     display: "grid",
-    gap: 4,
-    marginBottom: 6,
+    gap: 0,
+    marginBottom: 0,
   },
 
   groupHeader: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 8,
-    padding: "2px 2px 2px 0",
+    gap: 6,
+    padding: "0",
+    minHeight: 28,
   },
 
   groupToggle: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
     border: "none",
     background: "transparent",
     cursor: "pointer",
-    padding: "6px 6px",
+    padding: "4px 4px",
     color: "#334155",
     fontWeight: 700,
-    fontSize: 14,
+    fontSize: 12,
     textAlign: "left",
     minWidth: 0,
+    lineHeight: 1.05,
   },
 
   chevron: {
-    width: 12,
+    width: 10,
     color: "#64748b",
     flexShrink: 0,
-    fontSize: 18,
+    fontSize: 15,
     lineHeight: 1,
   },
 
   folderIcon: {
-    fontSize: 14,
+    fontSize: 13,
     lineHeight: 1,
     flexShrink: 0,
   },
@@ -506,15 +490,16 @@ const styles = {
   },
 
   groupSelectBtn: {
-    padding: "5px 9px",
+    padding: "3px 7px",
     border: "1px solid #d6dce8",
-    borderRadius: 10,
+    borderRadius: 8,
     background: "#fff",
     cursor: "pointer",
     fontWeight: 700,
     color: "#334155",
     whiteSpace: "nowrap",
-    fontSize: 12,
+    fontSize: 10,
+    lineHeight: 1.1,
   },
 
   groupSelectBtnActive: {
@@ -525,17 +510,17 @@ const styles = {
 
   endpointList: {
     display: "grid",
-    gap: 2,
-    paddingLeft: 18,
+    gap: 0,
+    paddingLeft: 16,
   },
 
   endpointRow: {
     display: "grid",
-    gridTemplateColumns: "16px 46px minmax(0, 1fr)",
-    gap: 10,
+    gridTemplateColumns: "14px 42px minmax(0, 1fr)",
+    gap: 6,
     alignItems: "start",
-    padding: "8px 8px",
-    borderRadius: 12,
+    padding: "3px 6px",
+    borderRadius: 6,
     cursor: "pointer",
     border: "1px solid transparent",
     minWidth: 0,
@@ -547,90 +532,94 @@ const styles = {
   },
 
   checkbox: {
-    marginTop: 3,
-    width: 14,
-    height: 14,
+    marginTop: 2,
+    width: 12,
+    height: 12,
   },
 
   methodText: {
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: 800,
-    lineHeight: 1.2,
+    lineHeight: 1.05,
     whiteSpace: "nowrap",
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
     paddingTop: 1,
   },
 
   endpointContent: {
     minWidth: 0,
     display: "grid",
-    gap: 3,
+    gap: 0,
   },
 
-  endpointTitleRow: {
+  endpointTopLine: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
+    gap: 4,
     minWidth: 0,
     flexWrap: "wrap",
   },
 
   endpointName: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: 700,
     color: "#0f172a",
     minWidth: 0,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    lineHeight: 1.1,
   },
 
   authBadge: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 700,
     color: "#9a3412",
     background: "#fff7ed",
     border: "1px solid #fed7aa",
     borderRadius: 999,
-    padding: "2px 6px",
+    padding: "1px 5px",
     whiteSpace: "nowrap",
     flexShrink: 0,
+    lineHeight: 1.05,
   },
 
   endpointPath: {
-    fontSize: 12,
+    fontSize: 10,
     color: "#64748b",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    lineHeight: 1.05,
   },
 
   footer: {
-    marginTop: 2,
-    fontSize: 12,
+    marginTop: 1,
+    fontSize: 11,
     color: "#64748b",
     display: "flex",
     justifyContent: "space-between",
-    gap: 10,
+    gap: 8,
     flexWrap: "wrap",
+    padding: "0 2px",
   },
 
   emptyState: {
-    padding: 20,
-    borderRadius: 12,
+    padding: 14,
+    borderRadius: 10,
     textAlign: "center",
     color: "#64748b",
   },
 
   emptyTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 800,
     color: "#0f172a",
-    marginBottom: 6,
+    marginBottom: 4,
   },
 
   emptySubtle: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#64748b",
   },
 };

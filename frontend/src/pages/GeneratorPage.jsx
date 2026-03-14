@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import EndpointSelector from "../components/EndpointSelector";
-import TestCaseTable from "../components/TestCaseTable";
-import TestCaseDrawer from "../components/TestCaseDrawer";
 import ResultsSummary from "../components/ResultsSummary";
 import { TEST_CASE_CSV_COLUMNS } from "../utils/testCaseColumns";
 
@@ -100,7 +98,14 @@ function buildCsvFromTable(rows) {
   return lines.join("\n");
 }
 
-export default function GeneratorPage({ projectId, onBack, options }) {
+export default function GeneratorPage({
+  projectId,
+  onBack,
+  onViewTestCases,
+  onSaveGeneratedRun,
+  generatedRun,
+  options,
+}) {
   const [endpointsLoading, setEndpointsLoading] = useState(true);
   const [endpointsErr, setEndpointsErr] = useState("");
   const [endpoints, setEndpoints] = useState([]);
@@ -110,21 +115,21 @@ export default function GeneratorPage({ projectId, onBack, options }) {
     filter: { q: "", method: "ALL", authOnly: false, tag: "ALL" },
   });
 
-  const [run, setRun] = useState({
-    run_id: "",
-    status: "idle",
-    error: null,
-    generation_mode: "balanced",
-    spec_quality: null,
-    blocked_endpoints: [],
-    partial_endpoints: [],
-    eligible_endpoints: [],
-    testplan: null,
-    report: null,
-  });
+  const [run, setRun] = useState(
+    generatedRun || {
+      run_id: "",
+      status: "idle",
+      error: null,
+      generation_mode: "balanced",
+      spec_quality: null,
+      blocked_endpoints: [],
+      partial_endpoints: [],
+      eligible_endpoints: [],
+      testplan: null,
+      report: null,
+    },
+  );
 
-  const [activeTab, setActiveTab] = useState("table");
-  const [drawer, setDrawer] = useState({ open: false, row: null });
   const [runningStepIndex, setRunningStepIndex] = useState(0);
 
   const tableRows = useMemo(
@@ -137,6 +142,12 @@ export default function GeneratorPage({ projectId, onBack, options }) {
     run.status === "running"
       ? RUNNING_STEPS[runningStepIndex % RUNNING_STEPS.length]
       : null;
+
+  useEffect(() => {
+    if (generatedRun?.testplan) {
+      setRun(generatedRun);
+    }
+  }, [generatedRun]);
 
   useEffect(() => {
     if (run.status !== "running") {
@@ -260,26 +271,36 @@ export default function GeneratorPage({ projectId, onBack, options }) {
         throw err;
       }
 
-      setRun({
+      const nextRun = {
         run_id: data.run_id || "",
         status: "done",
         error: null,
-        generation_mode: data.generation_mode || "balanced",
-        spec_quality: data.spec_quality || null,
+        generation_mode:
+          data.generation_mode || data.details?.generation_mode || "balanced",
+        spec_quality: data.spec_quality || data.details?.spec_quality || null,
         blocked_endpoints: Array.isArray(data.blocked_endpoints)
           ? data.blocked_endpoints
-          : [],
+          : Array.isArray(data.details?.blocked_endpoints)
+            ? data.details.blocked_endpoints
+            : [],
         partial_endpoints: Array.isArray(data.partial_endpoints)
           ? data.partial_endpoints
-          : [],
+          : Array.isArray(data.details?.partial_endpoints)
+            ? data.details.partial_endpoints
+            : [],
         eligible_endpoints: Array.isArray(data.eligible_endpoints)
           ? data.eligible_endpoints
-          : [],
+          : Array.isArray(data.details?.eligible_endpoints)
+            ? data.details.eligible_endpoints
+            : [],
         testplan: data.testplan || null,
         report: data.report || null,
-      });
+      };
+      setRun(nextRun);
 
-      setActiveTab("table");
+      if (onSaveGeneratedRun) {
+        onSaveGeneratedRun(nextRun);
+      }
     } catch (e) {
       setRun((r) => ({
         ...r,
@@ -328,6 +349,17 @@ export default function GeneratorPage({ projectId, onBack, options }) {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
+        @media (max-width: 860px) {
+          .strict-summary-grid {
+            grid-template-columns: 1fr 1fr !important;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .strict-summary-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
 
         @keyframes dotPulse {
           0%, 100% { opacity: 0.35; transform: scale(0.9); }
@@ -372,6 +404,8 @@ export default function GeneratorPage({ projectId, onBack, options }) {
           .generator-left-body {
             max-height: none !important;
           }
+
+          
         }
 
         @media (max-width: 860px) {
@@ -398,6 +432,16 @@ export default function GeneratorPage({ projectId, onBack, options }) {
           .explorer-footer-actions > button {
             flex: 1 1 auto;
           }
+
+         
+
+          .success-actions {
+            flex-direction: column !important;
+          }
+
+          .success-actions > button {
+            width: 100%;
+          }
         }
       `}</style>
 
@@ -411,28 +455,8 @@ export default function GeneratorPage({ projectId, onBack, options }) {
       <section className="generator-main-grid" style={styles.mainGrid}>
         <aside className="generator-left-pane" style={styles.leftPane}>
           <div style={styles.leftPaneHeader}>
-            <div>
-              <div style={styles.leftEyebrow}>Explorer</div>
-              <div style={styles.leftTitle}>Endpoint Explorer</div>
-              <div style={styles.leftSubtle}>
-                Browse, filter, and select endpoints for generation.
-              </div>
-            </div>
-          </div>
-
-          <div style={styles.projectDefaultsBar}>
-            <span style={styles.defaultChip}>
-              <strong>Env</strong> {options.env || "-"}
-            </span>
-            <span style={styles.defaultChip}>
-              <strong>Auth</strong> {options.auth_profile || "-"}
-            </span>
-            <span style={styles.defaultChip}>
-              <strong>Mode</strong> {options.generation_mode || "balanced"}
-            </span>
-            <span style={styles.defaultChip}>
-              <strong>AI</strong> {options.ai ? "On" : "Off"}
-            </span>
+            <div style={styles.leftTitle}>APIs</div>
+            <div style={styles.leftSubtle}>Endpoint Explorer</div>
           </div>
 
           <div className="generator-left-body" style={styles.explorerBody}>
@@ -519,7 +543,8 @@ export default function GeneratorPage({ projectId, onBack, options }) {
             <div>
               <div style={styles.panelTitle}>Results</div>
               <div style={styles.panelSubtle}>
-                Generated output appears here. Open any row for full detail.
+                Generate tests here, then open the dedicated Test Cases tab for
+                full review.
               </div>
             </div>
 
@@ -554,41 +579,6 @@ export default function GeneratorPage({ projectId, onBack, options }) {
           </div>
 
           <div style={styles.resultsInner}>
-            <div style={styles.tabRow}>
-              <button
-                type="button"
-                onClick={() => setActiveTab("table")}
-                style={{
-                  ...styles.tabBtn,
-                  ...(activeTab === "table" ? styles.tabBtnActive : {}),
-                }}
-              >
-                Table View
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("json")}
-                disabled={!run.testplan}
-                style={{
-                  ...styles.tabBtn,
-                  ...(activeTab === "json" ? styles.tabBtnActive : {}),
-                  opacity: !run.testplan ? 0.6 : 1,
-                }}
-              >
-                JSON View
-              </button>
-            </div>
-
-            {run.status === "done" && (
-              <div style={{ marginBottom: 18 }}>
-                <ResultsSummary
-                  rows={tableRows}
-                  report={run.report}
-                  testplan={run.testplan}
-                />
-              </div>
-            )}
-
             {run.status === "running" && (
               <div style={styles.resultsProgress}>
                 <div style={styles.resultsProgressTop}>
@@ -621,31 +611,149 @@ export default function GeneratorPage({ projectId, onBack, options }) {
                   "Something went wrong during generation."}
               </div>
             )}
+            {run.status === "error" &&
+              (run.spec_quality ||
+                run.blocked_endpoints.length ||
+                run.partial_endpoints.length) && (
+                <div style={styles.diagnosticsBox}>
+                  <div style={styles.diagnosticsTitle}>
+                    Spec improvement suggestions
+                  </div>
 
-            <div style={styles.resultsBody}>
-              {activeTab === "table" ? (
-                <TestCaseTable
-                  rows={tableRows}
-                  loading={run.status === "running"}
-                  onRowClick={(row) => setDrawer({ open: true, row })}
-                />
-              ) : (
-                <pre style={styles.jsonBox}>
-                  {run.testplan
-                    ? JSON.stringify(run.testplan, null, 2)
-                    : "No output yet."}
-                </pre>
+                  {run.spec_quality?.summary && (
+                    <div
+                      className="strict-summary-grid"
+                      style={styles.summaryMiniGrid}
+                    >
+                      <div style={styles.summaryMiniCard}>
+                        <div style={styles.summaryMiniLabel}>Spec health</div>
+                        <div style={styles.summaryMiniValue}>
+                          {run.spec_quality.spec_health_score ?? "-"}
+                        </div>
+                      </div>
+
+                      <div style={styles.summaryMiniCard}>
+                        <div style={styles.summaryMiniLabel}>Warnings</div>
+                        <div style={styles.summaryMiniValue}>
+                          {run.spec_quality.summary.warnings ?? 0}
+                        </div>
+                      </div>
+
+                      <div style={styles.summaryMiniCard}>
+                        <div style={styles.summaryMiniLabel}>Partial</div>
+                        <div style={styles.summaryMiniValue}>
+                          {run.spec_quality.summary.partial ?? 0}
+                        </div>
+                      </div>
+
+                      <div style={styles.summaryMiniCard}>
+                        <div style={styles.summaryMiniLabel}>Blocked</div>
+                        <div style={styles.summaryMiniValue}>
+                          {run.spec_quality.summary.blocked ?? 0}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {run.blocked_endpoints.length > 0 && (
+                    <div style={styles.diagnosticsSection}>
+                      <div style={styles.diagnosticsLabel}>
+                        Affected Endpoints
+                      </div>
+
+                      <div style={styles.issueList}>
+                        {run.blocked_endpoints.map((item, idx) => (
+                          <div key={idx} style={styles.issueCard}>
+                            <div style={styles.issueTitle}>
+                              {(item.method || "").toUpperCase()}{" "}
+                              {item.path || ""}
+                            </div>
+
+                            <div style={styles.issueMeta}>
+                              Status: {item.status || "-"} • Issues:{" "}
+                              {item.issues_count ?? 0}
+                            </div>
+
+                            {Array.isArray(item.issues) &&
+                              item.issues.map((issue, issueIdx) => (
+                                <div
+                                  key={issueIdx}
+                                  style={styles.issueSubBlock}
+                                >
+                                  <div style={styles.issueText}>
+                                    {issue.message}
+                                  </div>
+
+                                  {issue.suggested_fix?.content && (
+                                    <div style={styles.fixBox}>
+                                      <div style={styles.fixTitle}>
+                                        Suggested patch (
+                                        {issue.suggested_fix.format || "text"})
+                                      </div>
+                                      <pre style={styles.fixCode}>
+                                        {issue.suggested_fix.content}
+                                      </pre>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
-            </div>
+
+            {run.status === "done" && run.testplan && (
+              <>
+                <div style={{ marginBottom: 18 }}>
+                  <ResultsSummary
+                    rows={tableRows}
+                    report={run.report}
+                    testplan={run.testplan}
+                  />
+                </div>
+
+                <div style={styles.successBox}>
+                  <div style={styles.successTitle}>
+                    Test generation completed
+                  </div>
+                  <div style={styles.successText}>
+                    {tableRows.length} test case
+                    {tableRows.length === 1 ? "" : "s"} generated successfully.
+                    Open the dedicated Test Cases tab for readable review and
+                    case details.
+                  </div>
+
+                  <div
+                    className="success-actions"
+                    style={styles.successActions}
+                  >
+                    <button
+                      type="button"
+                      onClick={onViewTestCases}
+                      style={styles.primaryBtnCompact}
+                    >
+                      View Test Cases
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {run.status === "idle" && (
+              <div style={styles.emptyState}>
+                <div style={styles.emptyStateTitle}>No generation yet</div>
+                <div style={styles.emptyStateText}>
+                  Select one or more endpoints from the explorer and click
+                  Generate Tests.
+                </div>
+              </div>
+            )}
           </div>
         </section>
       </section>
-
-      <TestCaseDrawer
-        open={drawer.open}
-        row={drawer.row}
-        onClose={() => setDrawer({ open: false, row: null })}
-      />
     </div>
   );
 }
@@ -653,8 +761,8 @@ export default function GeneratorPage({ projectId, onBack, options }) {
 const styles = {
   page: {
     display: "grid",
-    gap: 12,
-    padding: "0 0 32px",
+    gap: 2,
+    padding: "0",
     width: "100%",
     minWidth: 0,
     margin: 0,
@@ -662,8 +770,8 @@ const styles = {
   },
 
   notice: {
-    padding: 16,
-    borderRadius: 16,
+    padding: 12,
+    borderRadius: 12,
     background: "#fff7ed",
     border: "1px solid #fed7aa",
     color: "#9a3412",
@@ -672,7 +780,7 @@ const styles = {
   mainGrid: {
     display: "grid",
     gridTemplateColumns: "420px minmax(0, 1fr)",
-    gap: 20,
+    gap: 10,
     alignItems: "start",
     width: "100%",
     minWidth: 0,
@@ -681,109 +789,195 @@ const styles = {
   leftPane: {
     minWidth: 0,
     width: "100%",
-    border: "1px solid #e6eaf2",
-    borderRadius: 24,
+    border: "1px solid #e5e7eb",
+    borderRadius: 18,
     background: "#fff",
-    boxShadow: "0 10px 32px rgba(15, 23, 42, 0.05)",
+    boxShadow: "0 4px 14px rgba(15, 23, 42, 0.04)",
     overflow: "hidden",
     position: "sticky",
     top: 0,
     display: "grid",
-    gridTemplateRows: "auto auto minmax(0, 1fr) auto",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
     maxHeight: "100vh",
   },
 
   leftPaneHeader: {
-    padding: "18px 20px 14px",
+    padding: "8px 12px 6px",
     borderBottom: "1px solid #eef2f7",
     background: "#ffffff",
-  },
-
-  leftEyebrow: {
-    fontSize: 11,
-    fontWeight: 800,
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    color: "#6366f1",
-    marginBottom: 6,
   },
 
   leftTitle: {
-    fontSize: 22,
-    fontWeight: 900,
-    color: "#0f172a",
-    letterSpacing: "-0.02em",
+    fontSize: 18,
+    fontWeight: 800,
+    color: "#111827",
+    letterSpacing: "-0.01em",
     lineHeight: 1.1,
-    marginBottom: 6,
+    marginBottom: 2,
   },
 
   leftSubtle: {
-    fontSize: 13,
-    color: "#64748b",
-    lineHeight: 1.5,
-  },
-
-  projectDefaultsBar: {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-    padding: "14px 20px",
-    borderBottom: "1px solid #eef2f7",
-    background: "#fafcff",
-  },
-
-  defaultChip: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "7px 10px",
-    borderRadius: 999,
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    color: "#475569",
     fontSize: 12,
-    fontWeight: 600,
-    whiteSpace: "nowrap",
+    color: "#6b7280",
+    lineHeight: 1.4,
   },
 
   explorerBody: {
-    padding: 16,
+    padding: 4,
     minWidth: 0,
     overflow: "auto",
   },
 
   explorerFooter: {
-    padding: 16,
+    padding: 8,
     borderTop: "1px solid #eef2f7",
     background: "#ffffff",
     display: "grid",
-    gap: 14,
+    gap: 8,
   },
 
   explorerFooterTop: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     flexWrap: "wrap",
   },
 
   explorerFooterActions: {
     display: "flex",
-    gap: 10,
+    gap: 8,
     alignItems: "center",
     flexWrap: "wrap",
     justifyContent: "flex-end",
   },
 
   countBadge: {
-    padding: "10px 14px",
+    padding: "5px 10px",
     borderRadius: 999,
-    background: "#eef2ff",
-    color: "#4338ca",
+    background: "#f3f4f6",
+    color: "#374151",
     fontWeight: 700,
-    fontSize: 13,
+    fontSize: 11,
     whiteSpace: "nowrap",
+  },
+  summaryMiniGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 10,
+  },
+
+  summaryMiniCard: {
+    border: "1px solid #fdba74",
+    background: "#fff7ed",
+    borderRadius: 12,
+    padding: 12,
+  },
+
+  summaryMiniLabel: {
+    fontSize: 12,
+    color: "#9a3412",
+    marginBottom: 6,
+    fontWeight: 700,
+  },
+
+  summaryMiniValue: {
+    fontSize: 22,
+    fontWeight: 800,
+    color: "#7c2d12",
+    lineHeight: 1,
+  },
+
+  diagnosticsBox: {
+    marginTop: 12,
+    border: "1px solid #fed7aa",
+    background: "#fffaf5",
+    borderRadius: 16,
+    padding: 16,
+    display: "grid",
+    gap: 16,
+  },
+
+  diagnosticsTitle: {
+    fontSize: 18,
+    fontWeight: 800,
+    color: "#9a3412",
+  },
+
+  diagnosticsSection: {
+    display: "grid",
+    gap: 10,
+  },
+
+  diagnosticsLabel: {
+    fontSize: 13,
+    fontWeight: 800,
+    color: "#7c2d12",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  },
+
+  issueList: {
+    display: "grid",
+    gap: 10,
+  },
+
+  issueCard: {
+    border: "1px solid #fdba74",
+    background: "#fff7ed",
+    borderRadius: 12,
+    padding: 12,
+    display: "grid",
+    gap: 8,
+  },
+
+  issueTitle: {
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#111827",
+  },
+
+  issueMeta: {
+    fontSize: 12,
+    color: "#7c2d12",
+  },
+
+  issueText: {
+    fontSize: 13,
+    color: "#44403c",
+    lineHeight: 1.5,
+    whiteSpace: "pre-wrap",
+  },
+
+  issueSubBlock: {
+    display: "grid",
+    gap: 8,
+    paddingTop: 6,
+  },
+
+  fixBox: {
+    border: "1px solid #fcd34d",
+    background: "#fffbeb",
+    borderRadius: 12,
+    padding: 10,
+  },
+
+  fixTitle: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#92400e",
+    marginBottom: 6,
+  },
+
+  fixCode: {
+    margin: 0,
+    padding: 12,
+    borderRadius: 10,
+    background: "#111827",
+    color: "#e5e7eb",
+    fontSize: 12,
+    overflow: "auto",
+    whiteSpace: "pre-wrap",
   },
 
   primaryBtn: {
@@ -792,32 +986,49 @@ const styles = {
     justifyContent: "center",
     gap: 10,
     width: "100%",
-    padding: "14px 18px",
-    borderRadius: 16,
+    padding: "12px 16px",
+    borderRadius: 12,
     border: "none",
-    background: "linear-gradient(90deg, #8b5cf6 0%, #4f7cff 100%)",
+    background: "#8b5cf6",
     color: "#fff",
     fontWeight: 800,
-    fontSize: 16,
+    fontSize: 14,
     cursor: "pointer",
-    boxShadow: "0 14px 30px rgba(79, 70, 229, 0.18)",
+    boxShadow: "none",
+    whiteSpace: "nowrap",
+  },
+
+  primaryBtnCompact: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    padding: "12px 16px",
+    borderRadius: 12,
+    border: "none",
+    background: "#8b5cf6",
+    color: "#fff",
+    fontWeight: 800,
+    fontSize: 14,
+    cursor: "pointer",
+    boxShadow: "none",
     whiteSpace: "nowrap",
   },
 
   secondaryBtn: {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "1px solid #d6dce8",
+    padding: "9px 12px",
+    borderRadius: 10,
+    border: "1px solid #d1d5db",
     background: "#fff",
     cursor: "pointer",
-    fontWeight: 700,
-    color: "#0f172a",
+    fontWeight: 600,
+    color: "#111827",
     whiteSpace: "nowrap",
   },
 
   infoBox: {
-    padding: 14,
-    borderRadius: 12,
+    padding: 12,
+    borderRadius: 10,
     background: "#f8fafc",
     border: "1px solid #e6eaf2",
     color: "#475569",
@@ -832,87 +1043,65 @@ const styles = {
   rightPane: {
     minWidth: 0,
     width: "100%",
-    border: "1px solid #e6eaf2",
-    borderRadius: 24,
+    border: "1px solid #e5e7eb",
+    borderRadius: 18,
     background: "#fff",
-    boxShadow: "0 10px 32px rgba(15, 23, 42, 0.05)",
+    boxShadow: "0 4px 14px rgba(15, 23, 42, 0.04)",
     overflow: "hidden",
   },
 
   resultsHeader: {
     display: "flex",
     justifyContent: "space-between",
-    gap: 16,
+    gap: 12,
     alignItems: "center",
-    padding: "20px 20px 16px",
+    padding: "14px 16px 12px",
     borderBottom: "1px solid #eef2f7",
     flexWrap: "wrap",
   },
 
   resultsTopActions: {
     display: "flex",
-    gap: 12,
+    gap: 8,
     alignItems: "center",
     justifyContent: "flex-end",
     flexWrap: "wrap",
   },
 
   panelTitle: {
-    fontSize: 22,
-    fontWeight: 900,
-    color: "#0f172a",
-    marginBottom: 6,
+    fontSize: 18,
+    fontWeight: 800,
+    color: "#111827",
+    marginBottom: 4,
     lineHeight: 1.15,
   },
 
   panelSubtle: {
-    fontSize: 14,
-    color: "#64748b",
-    lineHeight: 1.5,
+    fontSize: 12,
+    color: "#6b7280",
+    lineHeight: 1.4,
     maxWidth: 620,
   },
 
   modeBadge: {
-    padding: "10px 18px",
-    borderRadius: 18,
+    padding: "8px 12px",
+    borderRadius: 999,
     background: "#ffffff",
     border: "1px solid #dbe3f0",
     color: "#334155",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 800,
     whiteSpace: "nowrap",
   },
 
   resultsInner: {
-    padding: 20,
+    padding: 16,
     minWidth: 0,
   },
 
-  tabRow: {
-    display: "flex",
-    gap: 10,
-    marginBottom: 18,
-    flexWrap: "wrap",
-  },
-
-  tabBtn: {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "1px solid #d6dce8",
-    background: "#fff",
-    cursor: "pointer",
-    fontWeight: 700,
-  },
-
-  tabBtnActive: {
-    background: "#eef2ff",
-    borderColor: "#c7d2fe",
-    color: "#3730a3",
-  },
-
   resultsProgress: {
-    marginBottom: 16,
-    padding: "10px 0 2px",
+    marginBottom: 14,
+    padding: "6px 0 2px",
   },
 
   resultsProgressTop: {
@@ -921,8 +1110,8 @@ const styles = {
     gap: 12,
     flexWrap: "wrap",
     color: "#475569",
-    fontSize: 14,
-    marginBottom: 10,
+    fontSize: 13,
+    marginBottom: 8,
   },
 
   dotGroup: {
@@ -945,19 +1134,52 @@ const styles = {
     background: "linear-gradient(90deg, #8b5cf6 0%, #60a5fa 100%)",
   },
 
-  resultsBody: {
-    minWidth: 0,
-    width: "100%",
+  successBox: {
+    marginTop: 8,
+    padding: 18,
+    borderRadius: 16,
+    border: "1px solid #dbeafe",
+    background: "#f8fbff",
+    display: "grid",
+    gap: 12,
   },
 
-  jsonBox: {
-    margin: 0,
-    padding: 16,
-    borderRadius: 14,
-    background: "#0f172a",
-    color: "#e2e8f0",
-    overflow: "auto",
-    maxHeight: 620,
-    fontSize: 13,
+  successTitle: {
+    fontSize: 18,
+    fontWeight: 800,
+    color: "#0f172a",
+  },
+
+  successText: {
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 1.5,
+  },
+
+  successActions: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+
+  emptyState: {
+    border: "1px dashed #dbe3ef",
+    borderRadius: 16,
+    padding: "28px 20px",
+    textAlign: "center",
+    background: "#fcfdff",
+  },
+
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: 800,
+    color: "#111827",
+    marginBottom: 8,
+  },
+
+  emptyStateText: {
+    fontSize: 14,
+    color: "#6b7280",
+    lineHeight: 1.5,
   },
 };

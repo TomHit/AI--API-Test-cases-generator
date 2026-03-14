@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import AppShell from "./components/layout/AppShell";
 import DashboardPage from "./pages/DashboardPage";
 import GeneratorPage from "./pages/GeneratorPage";
-
+import TestCasesPage from "./pages/TestCasesPage";
 function OverviewPage() {
   return (
     <div className="page-grid">
@@ -478,176 +478,6 @@ function TeamsPage() {
   );
 }
 
-function TestCasesPage({ projectId }) {
-  const suites = [
-    {
-      id: "suite_1",
-      name: "Opportunities API",
-      count: 6,
-    },
-    {
-      id: "suite_2",
-      name: "Pulse API",
-      count: 4,
-    },
-  ];
-
-  const cases = [
-    {
-      id: "TC_GET_OPPORTUNITIES_001",
-      title: "Validate opportunities response schema",
-      type: "contract",
-      priority: "High",
-      endpoint: "GET /_api/trend/opportunities",
-      objective: "Verify response structure and required fields are present.",
-      reasoning:
-        "Generated because this endpoint returns structured rows and should be validated for schema consistency.",
-    },
-    {
-      id: "TC_GET_OPPORTUNITIES_NEG_001",
-      title: "Reject invalid timeframe parameter",
-      type: "negative",
-      priority: "Medium",
-      endpoint: "GET /_api/trend/opportunities",
-      objective: "Verify invalid query parameter is rejected gracefully.",
-      reasoning:
-        "Generated because query inputs are user-controlled and should be validated.",
-    },
-    {
-      id: "TC_GET_PULSE_001",
-      title: "Validate pulse response success contract",
-      type: "contract",
-      priority: "High",
-      endpoint: "GET /_api/trend/pulse",
-      objective: "Verify API returns 200 and expected top-level contract.",
-      reasoning:
-        "Generated because this endpoint is suitable for fast contract verification.",
-    },
-  ];
-
-  const selectedSuite = suites[0];
-  const selectedCase = cases[0];
-
-  return (
-    <div className="testcases-workspace">
-      <section className="page-card">
-        <div className="section-head testcases-topbar">
-          <div>
-            <h3 style={{ margin: 0 }}>Test Cases Explorer</h3>
-            <p className="muted" style={{ marginTop: 6 }}>
-              Project: {projectId || "Select a project first"}
-            </p>
-          </div>
-
-          <div className="testcases-actions">
-            <button type="button" className="secondary-btn">
-              Filter
-            </button>
-            <button type="button" className="secondary-btn">
-              Export CSV
-            </button>
-            <button type="button" className="primary-btn">
-              Open Selected
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <div className="testcases-grid">
-        <section className="page-card testcases-left">
-          <div className="testcases-panel-title">Suites</div>
-
-          <div className="testcases-suite-list">
-            {suites.map((suite) => (
-              <button
-                key={suite.id}
-                type="button"
-                className={`testcases-suite-item ${
-                  suite.id === selectedSuite.id ? "active" : ""
-                }`}
-              >
-                <div className="testcases-suite-name">{suite.name}</div>
-                <div className="testcases-suite-meta">
-                  {suite.count} test cases
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="page-card testcases-center">
-          <div className="testcases-panel-title">Cases</div>
-
-          <div className="clean-table-wrap">
-            <table className="clean-table">
-              <thead>
-                <tr>
-                  <th>Case ID</th>
-                  <th>Title</th>
-                  <th>Type</th>
-                  <th>Priority</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cases.map((tc) => (
-                  <tr
-                    key={tc.id}
-                    className={
-                      tc.id === selectedCase.id ? "testcase-row-active" : ""
-                    }
-                  >
-                    <td>{tc.id}</td>
-                    <td>{tc.title}</td>
-                    <td>
-                      <span className={`type-pill ${tc.type}`}>{tc.type}</span>
-                    </td>
-                    <td>{tc.priority}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="page-card testcases-right">
-          <div className="testcases-panel-title">Case Details</div>
-
-          <div className="testcases-detail-block">
-            <div className="testcases-detail-label">Case ID</div>
-            <div className="testcases-detail-value">{selectedCase.id}</div>
-          </div>
-
-          <div className="testcases-detail-block">
-            <div className="testcases-detail-label">Title</div>
-            <div className="testcases-detail-value">{selectedCase.title}</div>
-          </div>
-
-          <div className="testcases-detail-block">
-            <div className="testcases-detail-label">Endpoint</div>
-            <div className="testcases-detail-value">
-              {selectedCase.endpoint}
-            </div>
-          </div>
-
-          <div className="testcases-detail-block">
-            <div className="testcases-detail-label">Objective</div>
-            <div className="testcases-detail-value">
-              {selectedCase.objective}
-            </div>
-          </div>
-
-          <div className="testcases-ai-note">
-            <div className="testcases-detail-label">AI Reasoning</div>
-            <div className="testcases-detail-value">
-              {selectedCase.reasoning}
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
 function ExecutionPage() {
   return (
     <div className="page-card">
@@ -703,6 +533,7 @@ function SettingsPage() {
 export default function App() {
   const [activeNav, setActiveNav] = useState("overview");
   const [selectedProject, setSelectedProject] = useState(null);
+  const [generatedRun, setGeneratedRun] = useState(null);
 
   const [generatorSettings, setGeneratorSettings] = useState({
     include: ["contract", "schema"],
@@ -736,12 +567,20 @@ export default function App() {
           <GeneratorPage
             projectId={selectedProject}
             onBack={() => setActiveNav("projects")}
+            onViewTestCases={() => setActiveNav("testCases")}
+            onSaveGeneratedRun={setGeneratedRun}
+            generatedRun={generatedRun}
             options={generatorSettings}
           />
         );
 
       case "testCases":
-        return <TestCasesPage projectId={selectedProject} />;
+        return (
+          <TestCasesPage
+            projectId={selectedProject}
+            generatedRun={generatedRun}
+          />
+        );
 
       case "execution":
         return <ExecutionPage />;
@@ -756,7 +595,7 @@ export default function App() {
       default:
         return <OverviewPage />;
     }
-  }, [activeNav, selectedProject, generatorSettings]);
+  }, [activeNav, selectedProject, generatorSettings, generatedRun]);
 
   return (
     <AppShell activeNav={activeNav} onChangeNav={setActiveNav}>
