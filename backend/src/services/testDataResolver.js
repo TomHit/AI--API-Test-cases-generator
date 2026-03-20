@@ -87,12 +87,8 @@ function fieldNameHints(fieldName = "") {
   if (n === "x-device-token" || n === "device-token") {
     return "sample-device-token";
   }
-  if (n.includes("device")) return "device-123";
   if (n === "otp" || n.includes("otp")) return "123456";
   if (n === "code" || n.endsWith("_code")) return "123456";
-  if (n === "status") return "active";
-  if (n === "type") return "default";
-  if (n === "role") return "user";
   if (n === "slug") return "sample-slug";
   if (n === "title") return "Sample Title";
   if (n === "description") return "Sample description";
@@ -103,7 +99,7 @@ function fieldNameHints(fieldName = "") {
     return "2026-01-01T00:00:00Z";
   }
   if (n === "id" || n.endsWith("_id") || n === "userid" || n === "user_id") {
-    return "sample-id";
+    return "12345";
   }
 
   return undefined;
@@ -137,6 +133,7 @@ function resolveValidPrimitive(schema = {}, fieldName = "") {
   if (exampleValue !== undefined) {
     return { value: clone(exampleValue), source: "example/default/enum" };
   }
+
   const fieldHint = fieldNameHints(fieldName);
 
   if (
@@ -220,7 +217,7 @@ function resolveValidPrimitive(schema = {}, fieldName = "") {
     }
 
     case "boolean":
-      return { value: true, source: "type" };
+      return { value: false, source: "type" };
 
     case "array":
       return { value: [], source: "type" };
@@ -530,7 +527,6 @@ export function resolveEndpointTestData(endpoint) {
         resolved = resolveValidValue(schema, field?.name);
       }
 
-      // Path params should be realistic values for manual execution
       if (group.key === "path" && directExample === undefined) {
         if (schema.format === "uuid") {
           resolved = {
@@ -556,7 +552,7 @@ export function resolveEndpointTestData(endpoint) {
       result.sourceMap[`${group.key}.${field.name}`] = resolved.source;
     }
   }
-  // Default headers for manual execution
+
   if (!result.valid.headers["Accept"]) {
     result.valid.headers["Accept"] = "application/json";
     result.sourceMap["headers.Accept"] = "default_header";
@@ -572,6 +568,7 @@ export function resolveEndpointTestData(endpoint) {
   const preferredBody = preferredBodyType
     ? endpoint?.requestBody?.content?.[preferredBodyType]
     : null;
+
   const bodyExample = firstDefined(
     preferredBody?.example,
     pickExample(preferredBody),

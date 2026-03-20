@@ -1,10 +1,10 @@
 /**
- * Rule: endpoint has a success response
+ * Rule: endpoint has a documented 2xx success response
  */
 export function shouldGenerateContractSuccess(endpoint) {
   if (endpoint?.responses && typeof endpoint.responses === "object") {
-    return Object.keys(endpoint.responses).some((k) =>
-      /^2\d\d$/.test(String(k)),
+    return Object.keys(endpoint.responses).some((code) =>
+      /^2\d\d$/.test(String(code)),
     );
   }
 
@@ -13,7 +13,7 @@ export function shouldGenerateContractSuccess(endpoint) {
 }
 
 /**
- * Rule: endpoint has a response schema / required fields worth validating
+ * Rule: endpoint has a success response schema with properties or required fields
  */
 export function shouldGenerateContractRequiredFields(endpoint) {
   if (endpoint?.responses && typeof endpoint.responses === "object") {
@@ -24,9 +24,21 @@ export function shouldGenerateContractRequiredFields(endpoint) {
       const appJson =
         content["application/json"] || content["application/*+json"];
 
-      if (appJson?.schema) return true;
+      const schema = appJson?.schema;
+      if (!schema) continue;
+
+      const hasRequired =
+        Array.isArray(schema.required) && schema.required.length > 0;
+
+      const hasProperties =
+        schema?.properties && typeof schema.properties === "object"
+          ? Object.keys(schema.properties).length > 0
+          : false;
+
+      if (hasRequired || hasProperties) return true;
     }
   }
 
-  return !!endpoint?.response?.schemaSummary;
+  const summaryProps = endpoint?.response?.schemaSummary?.properties;
+  return Array.isArray(summaryProps) && summaryProps.length > 0;
 }

@@ -51,9 +51,9 @@ import {
   makeAuthExpiredCredentialsTemplate,
   makeAuthForbiddenRoleTemplate,
 } from "../templates/authTemplates.js";
+
 export const TEMPLATE_REGISTRY = {
   "contract.success": makeContractSuccessTemplate,
-
   "contract.required_fields": makeContractRequiredFieldsTemplate,
   "contract.status_code": makeContractStatusCodeTemplate,
   "contract.content_type": makeContractContentTypeTemplate,
@@ -99,3 +99,12 @@ export const TEMPLATE_REGISTRY = {
   "auth.expired_credentials": makeAuthExpiredCredentialsTemplate,
   "auth.forbidden_role": makeAuthForbiddenRoleTemplate,
 };
+
+export function getTemplateBuilder(templateKey) {
+  const key = String(templateKey || "").trim();
+  return TEMPLATE_REGISTRY[key] || null;
+}
+
+export function hasTemplateBuilder(templateKey) {
+  return !!getTemplateBuilder(templateKey);
+}

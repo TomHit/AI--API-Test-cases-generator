@@ -19,6 +19,30 @@ Rules: method uppercase. test_type must be one of contract/schema/negative/auth.
 function nowIso() {
   return new Date().toISOString();
 }
+function normalizePriority(priority) {
+  const p = String(priority || "").toUpperCase();
+
+  if (p === "P0") return "critical";
+  if (p === "P1") return "high";
+  if (p === "P2") return "medium";
+  if (p === "P3") return "low";
+
+  const low = String(priority || "").toLowerCase();
+  if (["low", "medium", "high", "critical"].includes(low)) return low;
+
+  return "medium";
+}
+
+function normalizeTestData(testData = {}) {
+  return {
+    path_params: testData.path_params || {},
+    query_params: testData.query_params || {},
+    headers: testData.headers || {},
+    cookies: testData.cookies || {},
+    request_body:
+      testData.request_body !== undefined ? testData.request_body : {},
+  };
+}
 function ensureCaseId(tc, suiteId = "suite", index = 1) {
   if (tc.id && String(tc.id).trim()) return tc.id;
 
@@ -100,37 +124,94 @@ function ensureArray(value) {
   return Array.isArray(value) ? value : [];
 }
 function detectResponseProfile(endpoint) {
-  const status = String(endpoint?.response?.status || "");
-  const contentType = String(
+  const responses = endpoint?.responses || {};
+
+  for (const [code, response] of Object.entries(responses)) {
+    if (!/^2\d\d$/.test(String(code))) continue;
+
+    const content = response?.content || {};
+    const contentTypes = Object.keys(content);
+    const contentType = String(contentTypes[0] || "").toLowerCase();
+
+    if (String(code) === "204" || contentTypes.length === 0) {
+      return { kind: "empty", contentType, status: String(code) };
+    }
+
+    if (contentType.includes("text/html")) {
+      return { kind: "html", contentType, status: String(code) };
+    }
+
+    if (
+      contentType.includes("application/json") ||
+      contentType.includes("+json")
+    ) {
+      return { kind: "json", contentType, status: String(code) };
+    }
+
+    if (
+      contentType.includes("application/pdf") ||
+      contentType.includes("application/octet-stream") ||
+      contentType.includes("image/") ||
+      contentType.includes("text/csv") ||
+      contentType.includes("application/zip")
+    ) {
+      return { kind: "binary", contentType, status: String(code) };
+    }
+
+    return { kind: "other", contentType, status: String(code) };
+  }
+
+  const fallbackStatus = String(endpoint?.response?.status || "");
+  const fallbackContentType = String(
     endpoint?.response?.contentType || "",
   ).toLowerCase();
 
-  if (status === "204" || !contentType) {
-    return { kind: "empty", contentType, status };
+  if (fallbackStatus === "204" || !fallbackContentType) {
+    return {
+      kind: "empty",
+      contentType: fallbackContentType,
+      status: fallbackStatus,
+    };
   }
 
-  if (contentType.includes("text/html")) {
-    return { kind: "html", contentType, status };
+  if (fallbackContentType.includes("text/html")) {
+    return {
+      kind: "html",
+      contentType: fallbackContentType,
+      status: fallbackStatus,
+    };
   }
 
   if (
-    contentType.includes("application/json") ||
-    contentType.includes("+json")
+    fallbackContentType.includes("application/json") ||
+    fallbackContentType.includes("+json")
   ) {
-    return { kind: "json", contentType, status };
+    return {
+      kind: "json",
+      contentType: fallbackContentType,
+      status: fallbackStatus,
+    };
   }
 
   if (
-    contentType.includes("application/pdf") ||
-    contentType.includes("application/octet-stream") ||
-    contentType.includes("image/") ||
-    contentType.includes("text/csv") ||
-    contentType.includes("application/zip")
+    fallbackContentType.includes("application/pdf") ||
+    fallbackContentType.includes("application/octet-stream") ||
+    fallbackContentType.includes("image/") ||
+    fallbackContentType.includes("text/csv") ||
+    fallbackContentType.includes("application/zip")
   ) {
-    return { kind: "binary", contentType, status };
+    return {
+      kind: "binary",
+      contentType: fallbackContentType,
+      status: fallbackStatus,
+    };
   }
 
-  return { kind: "other", contentType, status };
+  return {
+    kind: "other",
+    contentType: fallbackContentType,
+    status: fallbackStatus,
+  };
 }
 
 function buildCanonicalValidationByResponse(endpoint) {
@@ -768,30 +849,6 @@ export async function generateTestPlan(payload) {
       spec_quality: specQuality,
     };
     throw err;
-  }
-  function normalizePriority(priority) {
-    const p = String(priority || "").toUpperCase();
-
-    if (p === "P0") return "critical";
-    if (p === "P1") return "high";
-    if (p === "P2") return "medium";
-    if (p === "P3") return "low";
-
-    const low = String(priority || "").toLowerCase();
-    if (["low", "medium", "high", "critical"].includes(low)) return low;
-
-    return "medium";
-  }
-
-  function normalizeTestData(testData = {}) {
-    return {
-      path_params: testData.path_params || {},
-      query_params: testData.query_params || {},
-      headers: testData.headers || {},
-      cookies: testData.cookies || {},
-      request_body:
-        testData.request_body !== undefined ? testData.request_body : {},
-    };
   }
 
   obj.generation = {

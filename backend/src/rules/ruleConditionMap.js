@@ -24,138 +24,233 @@ import {
   shouldGenerateAuthMissingCredentials,
 } from "./negativeRules.js";
 
-function endpointExists(endpoint) {
-  return !!endpoint;
-}
-
 function normalizeMethod(method) {
   return String(method || "").toUpperCase();
 }
 
-function methodIsGet(endpoint) {
-  return normalizeMethod(endpoint?.method) === "GET";
+function methodIsGet(endpoint, profile) {
+  return normalizeMethod(profile?.method || endpoint?.method) === "GET";
 }
 
-function methodIsPost(endpoint) {
-  return normalizeMethod(endpoint?.method) === "POST";
+function methodIsPost(endpoint, profile) {
+  return normalizeMethod(profile?.method || endpoint?.method) === "POST";
 }
 
-function methodIsPut(endpoint) {
-  return normalizeMethod(endpoint?.method) === "PUT";
+function methodIsPut(endpoint, profile) {
+  return normalizeMethod(profile?.method || endpoint?.method) === "PUT";
 }
 
-function methodIsPatch(endpoint) {
-  return normalizeMethod(endpoint?.method) === "PATCH";
+function methodIsPatch(endpoint, profile) {
+  return normalizeMethod(profile?.method || endpoint?.method) === "PATCH";
 }
 
-function methodIsDelete(endpoint) {
-  return normalizeMethod(endpoint?.method) === "DELETE";
+function methodIsDelete(endpoint, profile) {
+  return normalizeMethod(profile?.method || endpoint?.method) === "DELETE";
 }
 
-function methodIsWrite(endpoint) {
-  return ["POST", "PUT", "PATCH"].includes(normalizeMethod(endpoint?.method));
-}
-
-function getSuccessResponses(endpoint) {
-  const responses = endpoint?.responses || {};
-  return Object.entries(responses).filter(([code]) =>
-    /^2\d\d$/.test(String(code)),
+function methodIsWrite(endpoint, profile) {
+  return ["POST", "PUT", "PATCH"].includes(
+    normalizeMethod(profile?.method || endpoint?.method),
   );
 }
 
-function getFirstSuccessResponse(endpoint) {
-  const matches = getSuccessResponses(endpoint);
-  return matches.length > 0 ? matches[0][1] : null;
+function endpointExists(endpoint, profile) {
+  return !!(profile?.exists ?? endpoint);
 }
 
-function responseHasContentType(endpoint) {
-  const res = getFirstSuccessResponse(endpoint);
-  const content = res?.content || {};
-  return Object.keys(content).length > 0 || !!endpoint?.response?.contentType;
+function endpointHas2xxResponse(endpoint, profile) {
+  if (typeof profile?.has2xxResponse === "boolean")
+    return profile.has2xxResponse;
+  return shouldGenerateContractSuccess(endpoint);
 }
 
-function responseHasHeaders(endpoint) {
-  const res = getFirstSuccessResponse(endpoint);
-  return !!(res?.headers && Object.keys(res.headers).length > 0);
+function responseHasContentType(endpoint, profile) {
+  if (typeof profile?.hasResponseContentType === "boolean") {
+    return profile.hasResponseContentType;
+  }
+  return false;
 }
 
-function endpointHasPathParams(endpoint) {
+function responseHasHeaders(endpoint, profile) {
+  if (typeof profile?.hasResponseHeaders === "boolean") {
+    return profile.hasResponseHeaders;
+  }
+  return false;
+}
+
+function endpointHasPathParams(endpoint, profile) {
+  if (typeof profile?.hasPathParams === "boolean") return profile.hasPathParams;
   return (
     Array.isArray(endpoint?.params?.path) && endpoint.params.path.length > 0
   );
 }
 
-function endpointHasQueryParams(endpoint) {
+function endpointHasQueryParams(endpoint, profile) {
+  if (typeof profile?.hasQueryParams === "boolean")
+    return profile.hasQueryParams;
   return (
     Array.isArray(endpoint?.params?.query) && endpoint.params.query.length > 0
   );
 }
 
-function endpointHasResourceIdentifier(endpoint) {
-  return endpointHasPathParams(endpoint);
+function endpointHasRequiredQuery(endpoint, profile) {
+  if (typeof profile?.hasRequiredQuery === "boolean")
+    return profile.hasRequiredQuery;
+  return shouldGenerateNegativeMissingRequiredQuery(endpoint);
 }
 
-function requestBodyHasOptionalFields(endpoint) {
-  const schema =
-    endpoint?.requestBody?.content?.["application/json"]?.schema ||
-    endpoint?.requestBody?.content?.["application/*+json"]?.schema ||
-    null;
-
-  const props = schema?.properties || {};
-  const propKeys = Object.keys(props);
-  const required = Array.isArray(schema?.required) ? schema.required : [];
-
-  return propKeys.length > required.length;
+function requestBodyHasOptionalFields(endpoint, profile) {
+  if (typeof profile?.requestBodyHasOptionalFields === "boolean") {
+    return profile.requestBodyHasOptionalFields;
+  }
+  return false;
 }
 
-function successResponseIs204(endpoint) {
+function successResponseIs204(endpoint, profile) {
+  if (typeof profile?.successResponseIs204 === "boolean") {
+    return profile.successResponseIs204;
+  }
   return !!endpoint?.responses?.["204"];
 }
 
-function endpointHasDocumentedError(endpoint) {
+function endpointHasDocumentedError(endpoint, profile) {
+  if (typeof profile?.hasDocumentedErrorResponses === "boolean") {
+    return profile.hasDocumentedErrorResponses;
+  }
   const responses = endpoint?.responses || {};
   return Object.keys(responses).some((code) => /^[45]\d\d$/.test(String(code)));
 }
 
-function endpointHasSummaryOrOperationId(endpoint) {
+function endpointHasSummaryOrOperationId(endpoint, profile) {
+  if (typeof profile?.hasSummaryOrOperationId === "boolean") {
+    return profile.hasSummaryOrOperationId;
+  }
   return !!endpoint?.summary || !!endpoint?.operationId;
 }
 
-function responseSchema(endpoint) {
-  const responses = endpoint?.responses || {};
-
-  for (const [code, val] of Object.entries(responses)) {
-    if (!/^2\d\d$/.test(String(code))) continue;
-
-    const schema =
-      val?.content?.["application/json"]?.schema ||
-      val?.content?.["application/*+json"]?.schema ||
-      null;
-
-    if (schema) return schema;
+function responseSchemaExists(endpoint, profile) {
+  if (typeof profile?.hasResponseSchema === "boolean") {
+    return profile.hasResponseSchema;
   }
-
-  return null;
+  return shouldGenerateSchemaResponse(endpoint);
 }
 
-function requestBodySchema(endpoint) {
-  return (
-    endpoint?.requestBody?.content?.["application/json"]?.schema ||
-    endpoint?.requestBody?.content?.["application/*+json"]?.schema ||
-    null
-  );
+function responseHasRequiredFields(endpoint, profile) {
+  if (typeof profile?.responseHasRequiredFields === "boolean") {
+    return profile.responseHasRequiredFields;
+  }
+  return shouldGenerateContractRequiredFields(endpoint);
 }
 
-function responseOrRequestSchemaHasEnum(endpoint) {
-  const responseProps = responseSchema(endpoint)?.properties || {};
-  const requestProps = requestBodySchema(endpoint)?.properties || {};
-
-  return [...Object.values(responseProps), ...Object.values(requestProps)].some(
-    (p) => Array.isArray(p?.enum) && p.enum.length > 0,
-  );
+function requestBodySchemaExists(endpoint, profile) {
+  if (typeof profile?.hasRequestBody === "boolean") {
+    return profile.hasRequestBody;
+  }
+  return shouldGenerateSchemaRequestBody(endpoint);
 }
 
-function queryParamsHaveTypedSchema(endpoint) {
+function requestBodyHasRequiredFields(endpoint, profile) {
+  if (typeof profile?.requestBodyHasRequiredFields === "boolean") {
+    return profile.requestBodyHasRequiredFields;
+  }
+  return shouldGenerateRequestBodyRequiredFields(endpoint);
+}
+
+function responseSchemaHasRequiredFields(endpoint, profile) {
+  if (typeof profile?.responseHasRequiredFields === "boolean") {
+    return profile.responseHasRequiredFields;
+  }
+  return shouldGenerateSchemaRequiredFields(endpoint);
+}
+
+function responseSchemaHasTypedFields(endpoint, profile) {
+  if (typeof profile?.responseSchemaHasTypedFields === "boolean") {
+    return profile.responseSchemaHasTypedFields;
+  }
+  return shouldGenerateSchemaTypedFields(endpoint);
+}
+
+function responseSchemaHasEnumFields(endpoint, profile) {
+  if (typeof profile?.responseSchemaHasEnumFields === "boolean") {
+    return profile.responseSchemaHasEnumFields;
+  }
+  return shouldGenerateSchemaEnum(endpoint);
+}
+
+function responseSchemaHasNestedObjects(endpoint, profile) {
+  if (typeof profile?.responseSchemaHasNestedObjects === "boolean") {
+    return profile.responseSchemaHasNestedObjects;
+  }
+  return shouldGenerateSchemaNestedObjects(endpoint);
+}
+
+function responseSchemaHasArrayFields(endpoint, profile) {
+  if (typeof profile?.responseSchemaHasArrayFields === "boolean") {
+    return profile.responseSchemaHasArrayFields;
+  }
+  return shouldGenerateSchemaArray(endpoint);
+}
+
+function responseSchemaHasFormatFields(endpoint, profile) {
+  if (typeof profile?.responseSchemaHasFormatFields === "boolean") {
+    return profile.responseSchemaHasFormatFields;
+  }
+  return shouldGenerateSchemaFormat(endpoint);
+}
+
+function responseSchemaHasNumericConstraints(endpoint, profile) {
+  if (typeof profile?.responseSchemaHasNumericConstraints === "boolean") {
+    return profile.responseSchemaHasNumericConstraints;
+  }
+  return shouldGenerateSchemaNumericConstraints(endpoint);
+}
+
+function responseSchemaHasStringConstraints(endpoint, profile) {
+  if (typeof profile?.responseSchemaHasStringConstraints === "boolean") {
+    return profile.responseSchemaHasStringConstraints;
+  }
+  return shouldGenerateSchemaStringConstraints(endpoint);
+}
+
+function responseSchemaHasPatternFields(endpoint, profile) {
+  if (typeof profile?.responseSchemaHasPatternFields === "boolean") {
+    return profile.responseSchemaHasPatternFields;
+  }
+  return shouldGenerateSchemaPattern(endpoint);
+}
+
+function schemaHasComposition(endpoint, profile) {
+  if (typeof profile?.schemaHasComposition === "boolean") {
+    return profile.schemaHasComposition;
+  }
+  return shouldGenerateSchemaComposition(endpoint);
+}
+
+function endpointRequiresAuth(endpoint, profile) {
+  if (typeof profile?.requiresAuth === "boolean") {
+    return profile.requiresAuth;
+  }
+  return shouldGenerateAuthMissingCredentials(endpoint);
+}
+
+function endpointRequiresRoleScope(_endpoint, profile) {
+  if (typeof profile?.requiresRoleScope === "boolean") {
+    return profile.requiresRoleScope;
+  }
+  return false;
+}
+
+function endpointHasResourceIdentifier(endpoint, profile) {
+  if (typeof profile?.hasResourceIdentifier === "boolean") {
+    return profile.hasResourceIdentifier;
+  }
+  return endpointHasPathParams(endpoint, profile);
+}
+
+function queryParamsHaveTypedSchema(endpoint, profile) {
+  if (typeof profile?.queryParamsHaveTypedSchema === "boolean") {
+    return profile.queryParamsHaveTypedSchema;
+  }
   const query = Array.isArray(endpoint?.params?.query)
     ? endpoint.params.query
     : [];
@@ -164,119 +259,117 @@ function queryParamsHaveTypedSchema(endpoint) {
   );
 }
 
-function schemaHasDateOrDatetimeFields(endpoint) {
-  const responseProps = responseSchema(endpoint)?.properties || {};
-  const requestProps = requestBodySchema(endpoint)?.properties || {};
-
-  return [...Object.values(responseProps), ...Object.values(requestProps)].some(
-    (p) => p?.format === "date" || p?.format === "date-time",
-  );
-}
-
-function requestBodySchemaControlsAdditionalProperties(endpoint) {
-  const schema = requestBodySchema(endpoint);
-  return schema?.additionalProperties === false;
-}
-
-function requestContainsUniqueBusinessField(endpoint) {
-  const schema = requestBodySchema(endpoint);
-  const props = schema?.properties || {};
-  const names = Object.keys(props).map((x) => String(x).toLowerCase());
-
-  return names.some((n) =>
-    [
-      "email",
-      "username",
-      "user_name",
-      "phone",
-      "mobile",
-      "code",
-      "external_id",
-      "slug",
-      "name",
-    ].includes(n),
-  );
-}
-
-function endpointCanConflict(endpoint) {
-  return methodIsPost(endpoint) && requestContainsUniqueBusinessField(endpoint);
-}
-
-function endpointHasRateLimitContract(endpoint) {
-  const responses = endpoint?.responses || {};
-  return !!responses["429"];
-}
-
-function endpointRequiresRoleScope(endpoint) {
-  const security = Array.isArray(endpoint?.security) ? endpoint.security : [];
-
-  for (const req of security) {
-    if (!req || typeof req !== "object") continue;
-
-    for (const scopes of Object.values(req)) {
-      if (Array.isArray(scopes) && scopes.length > 0) {
-        return true;
-      }
-    }
+function responseOrRequestSchemaHasEnum(endpoint, profile) {
+  if (typeof profile?.hasEnum === "boolean") {
+    return profile.hasEnum;
   }
+  return shouldGenerateSchemaEnum(endpoint);
+}
 
+function schemaHasStringFormat(endpoint, profile) {
+  if (typeof profile?.hasFormat === "boolean") {
+    return profile.hasFormat;
+  }
+  return shouldGenerateSchemaFormat(endpoint);
+}
+
+function schemaHasStringConstraints(endpoint, profile) {
+  if (typeof profile?.hasStringConstraints === "boolean") {
+    return profile.hasStringConstraints;
+  }
+  return shouldGenerateSchemaStringConstraints(endpoint);
+}
+
+function schemaHasNumericConstraints(endpoint, profile) {
+  if (typeof profile?.hasNumericConstraints === "boolean") {
+    return profile.hasNumericConstraints;
+  }
+  return shouldGenerateSchemaNumericConstraints(endpoint);
+}
+
+function schemaHasPattern(endpoint, profile) {
+  if (typeof profile?.hasPattern === "boolean") {
+    return profile.hasPattern;
+  }
+  return shouldGenerateSchemaPattern(endpoint);
+}
+
+function schemaHasDateOrDatetimeFields(_endpoint, profile) {
+  if (typeof profile?.hasDateOrDatetimeFields === "boolean") {
+    return profile.hasDateOrDatetimeFields;
+  }
   return false;
 }
 
-function endpointHasPaginationParams(endpoint) {
-  const names = (endpoint?.params?.query || []).map((p) =>
-    String(p?.name || "").toLowerCase(),
-  );
-  return names.some((n) =>
-    [
-      "page",
-      "limit",
-      "offset",
-      "pagesize",
-      "page_size",
-      "per_page",
-      "cursor",
-      "size",
-    ].includes(n),
-  );
+function requestBodySchemaControlsAdditionalProperties(_endpoint, profile) {
+  if (typeof profile?.requestBodyControlsAdditionalProperties === "boolean") {
+    return profile.requestBodyControlsAdditionalProperties;
+  }
+  return false;
 }
 
-function endpointHasSortingParams(endpoint) {
-  const names = (endpoint?.params?.query || []).map((p) =>
-    String(p?.name || "").toLowerCase(),
-  );
-  return names.some((n) =>
-    ["sort", "sortby", "order", "orderby", "order_by"].includes(n),
-  );
+function requestBodyIsObject(_endpoint, profile) {
+  if (typeof profile?.requestBodyIsObject === "boolean") {
+    return profile.requestBodyIsObject;
+  }
+  return false;
 }
 
-function endpointHasFilterParams(endpoint) {
-  const names = (endpoint?.params?.query || []).map((p) =>
-    String(p?.name || "").toLowerCase(),
-  );
-  return names.some(
-    (n) => n.includes("filter") || n === "status" || n === "type",
-  );
+function endpointCanConflict(_endpoint, profile) {
+  if (typeof profile?.canConflict === "boolean") {
+    return profile.canConflict;
+  }
+  return false;
+}
+
+function endpointHasRateLimitContract(_endpoint, profile) {
+  if (typeof profile?.hasRateLimitContract === "boolean") {
+    return profile.hasRateLimitContract;
+  }
+  return false;
+}
+
+function endpointHasPaginationParams(_endpoint, profile) {
+  if (typeof profile?.hasPaginationParams === "boolean") {
+    return profile.hasPaginationParams;
+  }
+  return false;
+}
+
+function endpointHasSortingParams(_endpoint, profile) {
+  if (typeof profile?.hasSortingParams === "boolean") {
+    return profile.hasSortingParams;
+  }
+  return false;
+}
+
+function endpointHasFilterParams(_endpoint, profile) {
+  if (typeof profile?.hasFilterParams === "boolean") {
+    return profile.hasFilterParams;
+  }
+  return false;
 }
 
 export const RULE_CONDITION_MAP = {
+  // Basic existence / method
   endpoint_exists: endpointExists,
-  endpoint_has_pagination: endpointHasPaginationParams,
-  query_or_body_has_enum: responseOrRequestSchemaHasEnum,
-  query_or_body_has_format: shouldGenerateSchemaFormat,
-  query_or_body_has_string_max_length: shouldGenerateSchemaStringConstraints,
-  query_or_body_has_numeric_maximum: shouldGenerateSchemaNumericConstraints,
-  request_body_is_object: (endpoint) => {
-    const schema = requestBodySchema(endpoint);
-    return !!(schema && (schema.type === "object" || schema.properties));
-  },
-  endpoint_has_2xx_response: shouldGenerateContractSuccess,
-  endpoint_has_documented_success_status: shouldGenerateContractSuccess,
-  success_response_documented: shouldGenerateContractSuccess,
-  method_is_get_and_has_2xx_response: (endpoint) =>
-    methodIsGet(endpoint) && shouldGenerateContractSuccess(endpoint),
-  method_is_write_and_has_2xx_response: (endpoint) =>
-    methodIsWrite(endpoint) && shouldGenerateContractSuccess(endpoint),
+  method_is_delete: methodIsDelete,
+  method_is_post_and_has_request_body: (endpoint, profile) =>
+    methodIsPost(endpoint, profile) &&
+    requestBodySchemaExists(endpoint, profile),
+  method_is_put_or_patch_and_has_request_body: (endpoint, profile) =>
+    (methodIsPut(endpoint, profile) || methodIsPatch(endpoint, profile)) &&
+    requestBodySchemaExists(endpoint, profile),
+  method_is_get_and_has_2xx_response: (endpoint, profile) =>
+    methodIsGet(endpoint, profile) && endpointHas2xxResponse(endpoint, profile),
+  method_is_write_and_has_2xx_response: (endpoint, profile) =>
+    methodIsWrite(endpoint, profile) &&
+    endpointHas2xxResponse(endpoint, profile),
+
+  // Contract
+  endpoint_has_2xx_response: endpointHas2xxResponse,
+  endpoint_has_documented_success_status: endpointHas2xxResponse,
+  success_response_documented: endpointHas2xxResponse,
 
   response_has_content_type: responseHasContentType,
   response_content_type_documented: responseHasContentType,
@@ -290,6 +383,8 @@ export const RULE_CONDITION_MAP = {
   endpoint_has_query_params: endpointHasQueryParams,
   query_params_documented: endpointHasQueryParams,
 
+  response_has_required_fields: responseHasRequiredFields,
+
   request_body_has_optional_fields: requestBodyHasOptionalFields,
   success_response_is_204: successResponseIs204,
 
@@ -299,55 +394,52 @@ export const RULE_CONDITION_MAP = {
   endpoint_has_summary_or_operationid: endpointHasSummaryOrOperationId,
   operation_metadata_exists: endpointHasSummaryOrOperationId,
 
-  response_schema_exists: shouldGenerateSchemaResponse,
-  response_has_required_fields: shouldGenerateContractRequiredFields,
+  // Schema
+  response_schema_exists: responseSchemaExists,
+  request_body_schema_exists: requestBodySchemaExists,
+  request_body_documented: requestBodySchemaExists,
+  request_body_has_required_fields: requestBodyHasRequiredFields,
 
-  request_body_schema_exists: shouldGenerateSchemaRequestBody,
-  request_body_documented: shouldGenerateSchemaRequestBody,
+  response_schema_has_required_fields: responseSchemaHasRequiredFields,
+  response_schema_has_typed_fields: responseSchemaHasTypedFields,
+  response_schema_has_enum_fields: responseSchemaHasEnumFields,
+  response_schema_has_nested_objects: responseSchemaHasNestedObjects,
+  response_schema_has_array_fields: responseSchemaHasArrayFields,
+  response_schema_has_format_fields: responseSchemaHasFormatFields,
+  response_schema_has_numeric_constraints: responseSchemaHasNumericConstraints,
+  response_schema_has_string_constraints: responseSchemaHasStringConstraints,
+  response_schema_has_pattern_fields: responseSchemaHasPatternFields,
+  schema_has_composition: schemaHasComposition,
 
-  request_body_has_required_fields: shouldGenerateRequestBodyRequiredFields,
-
-  response_schema_has_required_fields: shouldGenerateSchemaRequiredFields,
-  response_schema_has_typed_fields: shouldGenerateSchemaTypedFields,
-  response_schema_has_enum_fields: shouldGenerateSchemaEnum,
-  response_schema_has_nested_objects: shouldGenerateSchemaNestedObjects,
-  response_schema_has_array_fields: shouldGenerateSchemaArray,
-  response_schema_has_format_fields: shouldGenerateSchemaFormat,
-  response_schema_has_numeric_constraints:
-    shouldGenerateSchemaNumericConstraints,
-  response_schema_has_string_constraints: shouldGenerateSchemaStringConstraints,
-  response_schema_has_pattern_fields: shouldGenerateSchemaPattern,
-
-  schema_has_composition: shouldGenerateSchemaComposition,
-
-  endpoint_has_required_query: shouldGenerateNegativeMissingRequiredQuery,
-  endpoint_requires_auth: shouldGenerateAuthMissingCredentials,
-  endpoint_requires_role_scope: endpointRequiresRoleScope,
-
-  endpoint_has_resource_identifier: endpointHasResourceIdentifier,
-  query_params_have_typed_schema: queryParamsHaveTypedSchema,
+  query_or_body_has_enum: responseOrRequestSchemaHasEnum,
   response_or_request_schema_has_enum: responseOrRequestSchemaHasEnum,
-  schema_has_string_format: shouldGenerateSchemaFormat,
-  schema_has_string_constraints: shouldGenerateSchemaStringConstraints,
-  schema_has_numeric_constraints: shouldGenerateSchemaNumericConstraints,
-  schema_has_pattern: shouldGenerateSchemaPattern,
+  query_or_body_has_format: schemaHasStringFormat,
+  schema_has_string_format: schemaHasStringFormat,
+  query_or_body_has_string_max_length: schemaHasStringConstraints,
+  schema_has_string_constraints: schemaHasStringConstraints,
+  query_or_body_has_numeric_maximum: schemaHasNumericConstraints,
+  schema_has_numeric_constraints: schemaHasNumericConstraints,
+  schema_has_pattern: schemaHasPattern,
   schema_has_date_or_datetime_fields: schemaHasDateOrDatetimeFields,
   request_body_schema_controls_additional_properties:
     requestBodySchemaControlsAdditionalProperties,
-  request_contains_unique_business_field: requestContainsUniqueBusinessField,
+  request_body_is_object: requestBodyIsObject,
+
+  // Negative / Auth
+  endpoint_has_required_query: endpointHasRequiredQuery,
+  endpoint_requires_auth: endpointRequiresAuth,
+  endpoint_requires_role_scope: endpointRequiresRoleScope,
+  endpoint_has_resource_identifier: endpointHasResourceIdentifier,
+  query_params_have_typed_schema: queryParamsHaveTypedSchema,
   endpoint_can_conflict: endpointCanConflict,
   endpoint_has_rate_limit_contract: endpointHasRateLimitContract,
 
-  method_is_delete: methodIsDelete,
-  method_is_post_and_has_request_body: (endpoint) =>
-    methodIsPost(endpoint) && shouldGenerateSchemaRequestBody(endpoint),
-  method_is_put_or_patch_and_has_request_body: (endpoint) =>
-    (methodIsPut(endpoint) || methodIsPatch(endpoint)) &&
-    shouldGenerateSchemaRequestBody(endpoint),
-
+  // Query behavior
+  endpoint_has_pagination: endpointHasPaginationParams,
   endpoint_has_pagination_params: endpointHasPaginationParams,
   endpoint_has_sorting_params: endpointHasSortingParams,
   endpoint_has_filter_params: endpointHasFilterParams,
-  endpoint_has_sorting_or_filtering_params: (endpoint) =>
-    endpointHasSortingParams(endpoint) || endpointHasFilterParams(endpoint),
+  endpoint_has_sorting_or_filtering_params: (endpoint, profile) =>
+    endpointHasSortingParams(endpoint, profile) ||
+    endpointHasFilterParams(endpoint, profile),
 };

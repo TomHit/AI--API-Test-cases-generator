@@ -1,5 +1,6 @@
 import { loadRuleCatalog } from "../rules/loadRuleCatalog.js";
 import { RULE_CONDITION_MAP } from "../rules/ruleConditionMap.js";
+import { profileEndpoint } from "./endpointProfiler.js";
 
 function normalizeInclude(include) {
   if (!Array.isArray(include) || include.length === 0) {
@@ -40,7 +41,20 @@ function dedupeRules(rules) {
   return out;
 }
 
-export async function evaluateRules(endpoint, options = {}) {
+export async function evaluateRules(
+  endpoint,
+  profileOrOptions = {},
+  maybeOptions = {},
+) {
+  const hasProfile =
+    profileOrOptions &&
+    typeof profileOrOptions === "object" &&
+    Object.prototype.hasOwnProperty.call(profileOrOptions, "exists") &&
+    Object.prototype.hasOwnProperty.call(profileOrOptions, "method");
+
+  const profile = hasProfile ? profileOrOptions : profileEndpoint(endpoint);
+  const options = hasProfile ? maybeOptions : profileOrOptions;
+
   const include = normalizeInclude(options?.include);
   const rules = await loadRuleCatalog();
   const matchedRules = [];
@@ -77,7 +91,7 @@ export async function evaluateRules(endpoint, options = {}) {
     }
 
     try {
-      if (conditionFn(endpoint, options)) {
+      if (conditionFn(endpoint, profile, options)) {
         matchedRules.push(rule);
       } else {
         skipped.conditionFalse.push({
@@ -107,6 +121,7 @@ export async function evaluateRules(endpoint, options = {}) {
 
   if (options?.debugRules) {
     console.log(`RULE EVALUATION for ${endpoint?.method} ${endpoint?.path}`);
+    console.log("Endpoint profile:", profile);
     console.log(
       "Matched rules:",
       deduped.map((r) => r.rule_id),
@@ -114,5 +129,5 @@ export async function evaluateRules(endpoint, options = {}) {
     console.log("Skipped:", skipped);
   }
 
-  return deduped;
+  return { profile, rules: deduped };
 }

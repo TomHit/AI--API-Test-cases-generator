@@ -37,42 +37,58 @@ function parseMaybeYaml(text, filename = "") {
   const trimmed = String(text || "").trim();
   if (!trimmed) throw new Error("OpenAPI is empty");
 
+  let parsed;
   const looksJson = trimmed.startsWith("{") || trimmed.startsWith("[");
-  if (looksJson) return JSON.parse(trimmed);
 
-  return yaml.load(trimmed);
+  if (looksJson) {
+    parsed = JSON.parse(trimmed);
+  } else {
+    parsed = yaml.load(trimmed);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(
+      `OpenAPI must parse to an object: ${filename || "unknown source"}`,
+    );
+  }
+
+  return parsed;
 }
-
 async function fetchSpecFromCandidates(inputUrl) {
   const candidateUrls = buildCandidateSpecUrls(inputUrl);
 
   let lastStatus = null;
   let lastUrlTried = null;
+  let lastError = null;
   let text = null;
   let resolvedUrl = null;
 
   for (const candidateUrl of candidateUrls) {
     lastUrlTried = candidateUrl;
 
-    const res = await fetch(candidateUrl, {
-      headers: {
-        Accept:
-          "application/json, text/plain, application/yaml, text/yaml, application/x-yaml, */*",
-      },
-    });
+    try {
+      const res = await fetch(candidateUrl, {
+        headers: {
+          Accept:
+            "application/json, text/plain, application/yaml, text/yaml, application/x-yaml, */*",
+        },
+      });
 
-    if (res.ok) {
-      text = await res.text();
-      resolvedUrl = candidateUrl;
-      break;
+      if (res.ok) {
+        text = await res.text();
+        resolvedUrl = candidateUrl;
+        break;
+      }
+
+      lastStatus = res.status;
+    } catch (err) {
+      lastError = err;
     }
-
-    lastStatus = res.status;
   }
 
   if (text == null) {
     throw new Error(
-      `Failed to load OpenAPI URL: ${lastStatus || "unknown"}${lastUrlTried ? ` (${lastUrlTried})` : ""}`,
+      `Failed to load OpenAPI URL: ${lastStatus || lastError?.message || "unknown"}${lastUrlTried ? ` (${lastUrlTried})` : ""}`,
     );
   }
 

@@ -1,8 +1,10 @@
-import { loadRuleCatalog } from "../rules/loadRuleCatalog.js";
-import { RULE_CONDITION_MAP } from "../rules/ruleConditionMap.js";
 import { TEMPLATE_REGISTRY } from "./templateRegistry.js";
 import { resolveEndpointTestData } from "./testDataResolver.js";
 import { generateNegativeCases } from "./negativeCaseGenerator.js";
+import { evaluateRules } from "./evaluateRules.js";
+
+/* ------------------ BASIC HELPERS ------------------ */
+
 function firstItem(list) {
   return Array.isArray(list) && list.length > 0 ? list[0] : null;
 }
@@ -11,15 +13,12 @@ function firstByLocation(list, location) {
   const items = Array.isArray(list) ? list : [];
   return items.find((x) => x?.location === location) || items[0] || null;
 }
+
 function mergeObjects(base, extra) {
   return {
     ...(base && typeof base === "object" ? base : {}),
     ...(extra && typeof extra === "object" ? extra : {}),
   };
-}
-
-function isPlainObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value);
 }
 
 function lc(value) {
@@ -44,12 +43,17 @@ function findParamByName(list, name) {
   return (Array.isArray(list) ? list : []).find((p) => lc(p?.name) === target);
 }
 
-function firstDefined(...values) {
-  for (const v of values) {
-    if (v !== undefined && v !== null) return v;
-  }
-  return undefined;
+function ensureArray(value) {
+  return Array.isArray(value) ? value : [];
 }
+
+function ensureObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+}
+
+/* ------------------ GENERIC VALUE RESOLVER ------------------ */
 
 function semanticSampleValue(name, schema = {}) {
   const n = lc(name);
@@ -63,13 +67,6 @@ function semanticSampleValue(name, schema = {}) {
   if (schema?.example !== undefined) return schema.example;
   if (schema?.default !== undefined) return schema.default;
 
-  if (n === "tf" || n === "timeframe") return "M15";
-  if (n === "symbol") return "XAUUSD";
-  if (n === "symbols") return "XAUUSD,EURUSD";
-  if (n === "device" || n === "deviceid" || n === "device_id") {
-    return "test-device-001";
-  }
-  if (n === "x-device-id") return "test-device-001";
   if (n === "accept") return "application/json";
   if (n === "content-type") return "application/json";
   if (n.includes("email")) return "qa.user@example.com";
@@ -96,41 +93,19 @@ function normalizeParamValue(name, schema, currentValue) {
     return semanticSampleValue(name, schema);
   }
 
-  const n = lc(name);
-
   if (Array.isArray(schema?.enum) && schema.enum.length > 0) {
     return schema.enum.includes(currentValue) ? currentValue : schema.enum[0];
   }
 
-  if (n === "tf" || n === "timeframe") {
-    const allowed = ["M1", "M5", "M15", "H1", "H4", "D1"];
-    return allowed.includes(String(currentValue)) ? currentValue : "M15";
-  }
-
-  if (n === "symbol") {
-    return String(currentValue).trim() || "XAUUSD";
-  }
-
-  if (n === "symbols") {
-    const raw = String(currentValue).trim();
-    if (!raw || !/[A-Z]{3,6}/.test(raw)) return "XAUUSD,EURUSD";
-    return raw;
-  }
-
-  if (
-    n === "device" ||
-    n === "deviceid" ||
-    n === "device_id" ||
-    n === "x-device-id"
-  ) {
-    return "test-device-001";
-  }
+  const n = lc(name);
 
   if (n === "accept") return "application/json";
   if (n === "content-type") return "application/json";
 
   return currentValue;
 }
+
+/* ------------------ REQUEST BUILDERS ------------------ */
 
 function buildPositiveParams(
   paramDefs,
@@ -162,6 +137,7 @@ function keepUsefulHeaders(endpoint, resolvedHeaders = {}) {
     const name = paramName(param);
     if (!name) continue;
     if (isInternalOrDebugParam(name)) continue;
+
     if (
       !param?.required &&
       lc(name) !== "accept" &&
@@ -173,7 +149,7 @@ function keepUsefulHeaders(endpoint, resolvedHeaders = {}) {
     const schema = param?.schema || {};
     const existing =
       resolvedHeaders?.[name] ??
-      resolvedHeaders?.[name.toLowerCase()] ??
+      resolvedHeaders?.[name?.toLowerCase?.()] ??
       resolvedHeaders?.[
         Object.keys(resolvedHeaders || {}).find((k) => lc(k) === lc(name))
       ];
@@ -193,6 +169,7 @@ function alignDeviceValues(request) {
     path_params: { ...(request?.path_params || {}) },
     query_params: { ...(request?.query_params || {}) },
     headers: { ...(request?.headers || {}) },
+    cookies: { ...(request?.cookies || {}) },
     request_body: request?.request_body,
   };
 
@@ -206,8 +183,9 @@ function alignDeviceValues(request) {
 
   const unifiedDevice =
     (queryDeviceKey && q[queryDeviceKey]) ||
-    (headerDeviceKey && h[headerDeviceKey]) ||
-    "test-device-001";
+    (headerDeviceKey && h[headerDeviceKey]);
+
+  if (!unifiedDevice) return next;
 
   if (queryDeviceKey) q[queryDeviceKey] = unifiedDevice;
   if (headerDeviceKey) h[headerDeviceKey] = unifiedDevice;
@@ -222,44 +200,21 @@ function buildMinimalPositiveRequest(endpoint, resolved) {
     { includeOptional: true },
   );
 
-  const preferredParams = ["tf", "timeframe", "symbols"];
-
-  const allQueryDefs = endpoint?.params?.query || [];
-
-  const requiredParams = buildPositiveParams(
-    allQueryDefs,
+  const queryParams = buildPositiveParams(
+    endpoint?.params?.query || [],
     resolved?.valid?.query || {},
     { includeOptional: false },
   );
 
-  const preferredOptional = {};
-
-  for (const param of allQueryDefs) {
-    const name = paramName(param);
-    if (!name) continue;
-
-    if (!param?.required && preferredParams.includes(lc(name))) {
-      const schema = param?.schema || {};
-      const existing = resolved?.valid?.query?.[name];
-      preferredOptional[name] = normalizeParamValue(name, schema, existing);
-    }
-  }
-
-  const queryParams = {
-    ...requiredParams,
-    ...preferredOptional,
-  };
-
   const headers = keepUsefulHeaders(endpoint, resolved?.valid?.headers || {});
 
-  const request = {
+  return alignDeviceValues({
     path_params: pathParams,
     query_params: queryParams,
     headers,
+    cookies: resolved?.valid?.cookies || {},
     request_body: resolved?.valid?.body,
-  };
-
-  return alignDeviceValues(request);
+  });
 }
 
 function sanitizePositiveQueryParams(endpoint, query = {}) {
@@ -330,6 +285,8 @@ function sanitizePositiveTestData(endpoint, testData = {}) {
 
   return alignDeviceValues(cleaned);
 }
+
+/* ------------------ TEMPLATE HANDLING ------------------ */
 
 function isPositiveTemplateKey(templateKey) {
   const key = String(templateKey || "")
@@ -500,6 +457,9 @@ function buildUniversalNegativeCases(endpoint) {
 
   return cases;
 }
+
+/* ------------------ DATA RESOLUTION ------------------ */
+
 function inferResolvedTestData(templateKey, endpoint) {
   const resolved =
     endpoint?._resolvedTestData || resolveEndpointTestData(endpoint);
@@ -510,6 +470,7 @@ function inferResolvedTestData(templateKey, endpoint) {
         path_params: resolved?.valid?.path || {},
         query_params: resolved?.valid?.query || {},
         headers: resolved?.valid?.headers || {},
+        cookies: resolved?.valid?.cookies || {},
         request_body: resolved?.valid?.body,
       };
 
@@ -731,32 +692,8 @@ function inferResolvedTestData(templateKey, endpoint) {
       return validRequest;
   }
 }
-function normalizeMethod(method) {
-  return String(method || "").toUpperCase();
-}
 
-function methodMatchesFilter(endpoint, methodFilter) {
-  if (!methodFilter) return true;
-
-  const endpointMethod = normalizeMethod(endpoint?.method);
-  const allowed = String(methodFilter)
-    .split("|")
-    .map((m) => normalizeMethod(m.trim()))
-    .filter(Boolean);
-
-  if (allowed.length === 0) return true;
-  return allowed.includes(endpointMethod);
-}
-
-function ensureArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function ensureObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value
-    : {};
-}
+/* ------------------ CASE ANNOTATION ------------------ */
 
 function annotateCase(tc, rule, endpoint) {
   if (!tc) return null;
@@ -769,9 +706,9 @@ function annotateCase(tc, rule, endpoint) {
   tc.test_data = ensureObject(tc.test_data);
 
   tc.api_details = {
-    method: normalizeMethod(
+    method: String(
       tc?.api_details?.method || endpoint?.method || "GET",
-    ),
+    ).toUpperCase(),
     path: tc?.api_details?.path || endpoint?.path || "/",
   };
 
@@ -782,9 +719,9 @@ function annotateCase(tc, rule, endpoint) {
     tc.references.push(`scenario:${rule.scenario}`);
   }
 
-  const resolvedTemplateKey = getTemplateKey(rule);
-  if (resolvedTemplateKey) {
-    tc.references.push(`template_key:${resolvedTemplateKey}`);
+  const templateKey = getTemplateKey(rule);
+  if (templateKey) {
+    tc.references.push(`template_key:${templateKey}`);
   }
 
   if (rule?.category && !tc.test_type) {
@@ -810,7 +747,7 @@ function annotateCase(tc, rule, endpoint) {
     tc.needs_review = false;
   }
 
-  const resolvedData = inferResolvedTestData(resolvedTemplateKey, endpoint);
+  const resolvedData = inferResolvedTestData(templateKey, endpoint);
 
   const mergedTestData = {
     path_params: mergeObjects(
@@ -829,15 +766,19 @@ function annotateCase(tc, rule, endpoint) {
         : resolvedData?.request_body,
   };
 
-  tc.test_data = isPositiveTemplateKey(resolvedTemplateKey)
+  tc.test_data = isPositiveTemplateKey(templateKey)
     ? sanitizePositiveTestData(endpoint, mergedTestData)
     : mergedTestData;
+
   return tc;
 }
+
+/* ------------------ RULE HANDLING ------------------ */
+
 function resolveLegacyTemplateKey(rule) {
-  const category = String(rule.category || "").toLowerCase();
-  const appliesWhen = String(rule.applies_when || "").trim();
-  const ruleId = String(rule.rule_id || "").trim();
+  const category = String(rule?.category || "").toLowerCase();
+  const appliesWhen = String(rule?.applies_when || "").trim();
+  const ruleId = String(rule?.rule_id || "").trim();
 
   if (category === "contract") {
     if (
@@ -1159,6 +1100,7 @@ function resolveLegacyTemplateKey(rule) {
 
   return "";
 }
+
 function getTemplateKey(rule) {
   const direct = String(rule?.template_key || "").trim();
   if (direct) return direct;
@@ -1179,6 +1121,13 @@ function buildCaseFromCsvRule(rule, endpoint) {
   return annotateCase(fn(endpoint), rule, endpoint);
 }
 
+async function resolveCsvRules(endpoint, options = {}) {
+  const { rules } = await evaluateRules(endpoint, options);
+  return rules;
+}
+
+/* ------------------ MAIN GENERATION ------------------ */
+
 function buildDedupKey(tc) {
   return JSON.stringify({
     title: String(tc?.title || "")
@@ -1187,9 +1136,6 @@ function buildDedupKey(tc) {
     test_type: String(tc?.test_type || "")
       .trim()
       .toLowerCase(),
-    priority: String(tc?.priority || "")
-      .trim()
-      .toUpperCase(),
     objective: String(tc?.objective || "")
       .replace(/\s+/g, " ")
       .trim()
@@ -1205,12 +1151,6 @@ function buildDedupKey(tc) {
         .toLowerCase(),
     ),
     expected_results: ensureArray(tc?.expected_results).map((x) =>
-      String(x || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase(),
-    ),
-    validation_focus: ensureArray(tc?.validation_focus).map((x) =>
       String(x || "")
         .replace(/\s+/g, " ")
         .trim()
@@ -1233,72 +1173,6 @@ function dedupeCases(cases) {
   return out;
 }
 
-async function resolveCsvRules(endpoint, options = {}) {
-  const include = Array.isArray(options?.include)
-    ? options.include.map((x) => String(x).toLowerCase())
-    : ["contract", "schema"];
-
-  const catalog = await loadRuleCatalog();
-  const matchedRules = [];
-  const skippedNoCondition = [];
-  const skippedConditionFalse = [];
-
-  for (const rule of catalog) {
-    const category = String(rule.category || "").toLowerCase();
-    if (!include.includes(category)) continue;
-
-    if (!methodMatchesFilter(endpoint, rule.method_filter)) continue;
-
-    const conditionKey = String(rule.applies_when || "").trim();
-    const conditionFn = RULE_CONDITION_MAP[conditionKey];
-
-    if (!conditionFn) {
-      skippedNoCondition.push({
-        rule_id: rule.rule_id,
-        applies_when: conditionKey,
-      });
-      continue;
-    }
-
-    try {
-      if (conditionFn(endpoint, options)) {
-        matchedRules.push(rule);
-      } else {
-        skippedConditionFalse.push({
-          rule_id: rule.rule_id,
-          applies_when: conditionKey,
-        });
-      }
-    } catch (err) {
-      console.error(`CSV rule evaluation failed: ${rule.rule_id}`, err);
-    }
-  }
-
-  console.log(
-    `MATCHED CSV RULES for ${endpoint?.method} ${endpoint?.path}:`,
-    matchedRules.map(
-      (r) =>
-        `${r.rule_id} | ${r.category} | ${r.scenario} | template=${getTemplateKey(r)}`,
-    ),
-  );
-
-  if (skippedNoCondition.length > 0) {
-    console.log(
-      "CSV rules skipped because applies_when not mapped:",
-      skippedNoCondition,
-    );
-  }
-
-  if (skippedConditionFalse.length > 0) {
-    console.log(
-      `CSV rules condition=false for ${endpoint?.method} ${endpoint?.path}:`,
-      skippedConditionFalse,
-    );
-  }
-
-  return matchedRules;
-}
-
 export async function generateCasesForEndpoint(endpoint, options = {}) {
   const enrichedEndpoint = {
     ...endpoint,
@@ -1313,7 +1187,10 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
       const tc = buildCaseFromCsvRule(rule, enrichedEndpoint);
       if (tc) cases.push(tc);
     } catch (err) {
-      console.error(`Template build failed for CSV rule: ${rule.rule_id}`, err);
+      console.error(
+        `Template build failed for CSV rule: ${rule?.rule_id}`,
+        err,
+      );
     }
   }
 
@@ -1331,10 +1208,9 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
 }
 
 export async function generateCasesForEndpoints(endpoints, options = {}) {
-  const eps = Array.isArray(endpoints) ? endpoints : [];
   const allCases = [];
 
-  for (const endpoint of eps) {
+  for (const endpoint of endpoints || []) {
     const cases = await generateCasesForEndpoint(endpoint, options);
     allCases.push(...cases);
   }
