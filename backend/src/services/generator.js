@@ -1,5 +1,5 @@
 import { loadOpenApiDoc } from "./openapiLoader.js";
-import { extractEndpoints } from "./openapiParser.js";
+import { extractEndpointsLite } from "./openapiParser.js";
 import { buildGeneratorPrompt, buildRepairPrompt } from "./prompt.js";
 import { getAIProvider } from "../providers/ai/index.js";
 import { generateCasesForEndpoints } from "./templateEngine.js";
@@ -18,6 +18,13 @@ Rules: method uppercase. test_type must be one of contract/schema/negative/auth.
 
 function nowIso() {
   return new Date().toISOString();
+}
+function chunkArray(items, size) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
 }
 function normalizePriority(priority) {
   const p = String(priority || "")
@@ -564,7 +571,6 @@ async function buildDeterministicTestPlan({
     "DETERMINISTIC CASES COUNT:",
     Array.isArray(cases) ? cases.length : "not-array",
   );
-  console.dir(cases, { depth: null });
 
   if (Array.isArray(cases)) {
     const perEndpointSeq = new Map();
@@ -704,29 +710,28 @@ export async function generateTestPlan(payload) {
   });
 
   // Parse endpoints catalog
-  const allEndpoints = extractEndpoints(doc);
+  const allEndpointsLite = extractEndpointsLite(doc);
 
   // Selected endpoints from UI
   const selected = Array.isArray(payload?.endpoints) ? payload.endpoints : [];
-  let endpointRecords = allEndpoints;
+  let endpointRecordsLite = allEndpointsLite;
 
   if (selected.length > 0) {
     const keyset = new Set(
       selected.map((e) => `${String(e.method).toUpperCase()} ${e.path}`),
     );
 
-    endpointRecords = allEndpoints.filter((e) =>
+    endpointRecordsLite = allEndpointsLite.filter((e) =>
       keyset.has(`${String(e.method).toUpperCase()} ${e.path}`),
     );
   }
-
-  if (endpointRecords.length === 0) {
+  if (endpointRecordsLite.length === 0) {
     const err = new Error(
       "No endpoints matched selection. Check OpenAPI or selection payload.",
     );
     err.details = {
       selected,
-      endpoints_found: allEndpoints.length,
+      endpoints_found: allEndpointsLite.length,
     };
     throw err;
   }
@@ -734,12 +739,12 @@ export async function generateTestPlan(payload) {
   // Spec quality validation before generation
   // -----------------------------------------
   const generationMode = getManualSafetyMode(payload); // "balanced" | "strict"
-  const specQuality = validateSpecQuality(doc, endpointRecords);
+  const specQuality = validateSpecQuality(doc, endpointRecordsLite);
 
   const blockedForMode = summarizeBlockedQuality(specQuality, generationMode);
   const partialForUi = summarizePartialQuality(specQuality);
   const eligibleEndpointRecords = filterEndpointsByQuality(
-    endpointRecords,
+    endpointRecordsLite,
     specQuality,
     generationMode,
   );
@@ -765,7 +770,7 @@ export async function generateTestPlan(payload) {
       generation_mode: generationMode,
       spec_quality: specQuality,
       blocked_endpoints: blockedForMode,
-      selected_endpoints: endpointRecords.map(
+      selected_endpoints: endpointRecordsLite.map(
         (e) => `${String(e.method).toUpperCase()} ${e.path}`,
       ),
     };
@@ -773,14 +778,15 @@ export async function generateTestPlan(payload) {
     throw err;
   }
 
-  console.log("GENERATOR ENDPOINTS COUNT:", allEndpoints.length);
+  console.log("GENERATOR ENDPOINTS COUNT:", allEndpointsLite.length);
+  console.log("SELECTED ENDPOINTS COUNT:", selected.length);
+
+  // show only first few (debug-safe)
   console.log(
-    "GENERATOR ENDPOINT PATHS:",
-    allEndpoints.map((e) => `${String(e.method).toUpperCase()} ${e.path}`),
-  );
-  console.log(
-    "SELECTED PAYLOAD ENDPOINTS:",
-    selected.map((e) => `${String(e.method).toUpperCase()} ${e.path}`),
+    "SAMPLE ENDPOINTS:",
+    allEndpointsLite
+      .slice(0, 5)
+      .map((e) => `${String(e.method).toUpperCase()} ${e.path}`),
   );
   const fallbackBaseUrl =
     cfg?.base_url || cfg?.baseUrl || payload?.base_url || "";
@@ -802,20 +808,86 @@ export async function generateTestPlan(payload) {
     schemaText: SCHEMA_SHAPE_GUIDE,
   });
 
-  const caseIdGen = createCaseIdGenerator(allEndpoints);
-
   // ------------------------------
   // Deterministic-first baseline
   // ------------------------------
   let obj = null;
 
-  const deterministic = await buildDeterministicTestPlan({
+  // 🔥 BATCHING START
+  const BATCH_SIZE = 15;
+
+  const endpointBatches = chunkArray(eligibleEndpointRecords, BATCH_SIZE);
+  console.log("TOTAL ENDPOINTS:", eligibleEndpointRecords.length);
+  console.log("TOTAL BATCHES:", endpointBatches.length);
+
+  let mergedSuites = [];
+
+  for (let i = 0; i < endpointBatches.length; i++) {
+    const batch = endpointBatches[i];
+
+    console.log(
+      `Processing batch ${i + 1}/${endpointBatches.length} (${batch.length} endpoints)`,
+    );
+
+    // 🔥 ONLY parse full endpoints for THIS batch
+    const batchKeyset = new Set(
+      batch.map((e) => `${String(e.method).toUpperCase()} ${e.path}`),
+    );
+
+    const batchFull = batch.map((liteEp) => {
+      const pathItem = doc.paths?.[liteEp.path];
+      const operation = pathItem?.[liteEp.method.toLowerCase()];
+
+      return {
+        ...liteEp,
+        params: {
+          path: (pathItem?.parameters || []).filter((p) => p.in === "path"),
+          query: (operation?.parameters || []).filter((p) => p.in === "query"),
+          header: (operation?.parameters || []).filter(
+            (p) => p.in === "header",
+          ),
+        },
+        requestBody: operation?.requestBody || null,
+        responses: operation?.responses || {},
+      };
+    });
+
+    const batchCaseIdGen = createCaseIdGenerator(batchFull);
+
+    const batchPlan = await buildDeterministicTestPlan({
+      project: projectBlock,
+      options,
+      endpoints: batchFull,
+      caseIdGen: batchCaseIdGen,
+      fallbackBaseUrl,
+    });
+
+    let obj = batchPlan;
+
+    obj = enrichSuitesWithCaseIds(obj, batchFull, fallbackBaseUrl);
+    obj = applyResponseAwareCaseNormalization(obj, batchFull);
+    obj = filterGeneratedPlanToEligibleEndpoints(obj, batchFull);
+
+    mergedSuites.push(...(obj.suites || []));
+  }
+
+  const deterministic = {
     project: projectBlock,
-    options,
-    endpoints: eligibleEndpointRecords,
-    caseIdGen,
-    fallbackBaseUrl,
-  });
+    generation: {
+      generated_at: nowIso(),
+      generator_version: "v1",
+      model: "deterministic",
+      prompt_version: "p1",
+      rag_enabled: false,
+      batching: {
+        enabled: true,
+        batch_size: BATCH_SIZE,
+        total_batches: endpointBatches.length,
+      },
+    },
+    suites: mergedSuites,
+  };
+  // 🔥 BATCHING END
 
   // ------------------------------
   // Optional AI enrichment
@@ -888,10 +960,6 @@ export async function generateTestPlan(payload) {
     ? obj.project.auth_vars
     : projectBlock.auth_vars;
 
-  obj = enrichSuitesWithCaseIds(obj, allEndpoints, fallbackBaseUrl);
-  obj = applyResponseAwareCaseNormalization(obj, allEndpoints);
-  obj = filterGeneratedPlanToEligibleEndpoints(obj, eligibleEndpointRecords);
-
   console.log(
     "SUITE CASE COUNTS:",
     (obj.suites || []).map((s) => ({
@@ -907,7 +975,7 @@ export async function generateTestPlan(payload) {
     );
     err.details = {
       generation_mode: generationMode,
-      selected_endpoints: endpointRecords.map(
+      selected_endpoints: endpointRecordsLite.map(
         (e) => `${String(e.method).toUpperCase()} ${e.path}`,
       ),
       eligible_endpoints: eligibleEndpointRecords.map(

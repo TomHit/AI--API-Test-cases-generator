@@ -690,8 +690,7 @@ function hasAuth(op, openapiDoc) {
 
   return securityReqs.length > 0;
 }
-
-export function extractEndpoints(openapiDoc) {
+export function extractEndpointsLite(openapiDoc) {
   const paths = openapiDoc?.paths || {};
   const out = [];
   const servers = buildServers(openapiDoc);
@@ -710,6 +709,48 @@ export function extractEndpoints(openapiDoc) {
 
       const tags = Array.isArray(op?.tags) ? op.tags : [];
       const summary = op?.summary || op?.operationId || "";
+      const security = op?.security || openapiDoc?.security || [];
+
+      out.push({
+        id: `${method} ${pth}`,
+        method,
+        path: pth,
+        host: openapiDoc?.host || "",
+        basePath: openapiDoc?.basePath || "",
+        schemes: Array.isArray(openapiDoc?.schemes) ? openapiDoc.schemes : [],
+        servers,
+        tags,
+        summary: summary ? String(summary).slice(0, 160) : "",
+        operationId: op?.operationId || "",
+        description: op?.description
+          ? String(op.description).slice(0, 300)
+          : "",
+        deprecated: !!op?.deprecated,
+        security,
+        requires_auth: hasAuth(op, openapiDoc),
+      });
+    }
+  }
+
+  return out;
+}
+export function extractEndpointsFull(openapiDoc) {
+  const paths = openapiDoc?.paths || {};
+  const out = [];
+  const servers = buildServers(openapiDoc);
+
+  for (const pth of Object.keys(paths)) {
+    const pathItem = paths[pth] || {};
+
+    for (const m of Object.keys(pathItem)) {
+      const method = normalizeMethod(m);
+      if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        continue;
+      }
+
+      const op = pathItem[m];
+      if (!isObject(op)) continue;
+
       const params = parseParams(pathItem, op, openapiDoc);
 
       const requestBody =
@@ -717,6 +758,8 @@ export function extractEndpoints(openapiDoc) {
         buildSwagger2RequestBody(pathItem, op, openapiDoc);
 
       const response = pickBestResponse(pathItem, op, openapiDoc);
+      const tags = Array.isArray(op?.tags) ? op.tags : [];
+      const summary = op?.summary || op?.operationId || "";
       const security = op?.security || openapiDoc?.security || [];
 
       out.push({
@@ -734,12 +777,12 @@ export function extractEndpoints(openapiDoc) {
           ? String(op.description).slice(0, 500)
           : "",
         deprecated: !!op?.deprecated,
+        security,
+        requires_auth: hasAuth(op, openapiDoc),
         params,
         requestBody,
         response,
         responses: clone(op?.responses || {}),
-        security,
-        requires_auth: hasAuth(op, openapiDoc),
       });
     }
   }

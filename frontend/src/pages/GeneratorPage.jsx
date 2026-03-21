@@ -135,22 +135,35 @@ function prettyJson(value) {
 
 function getEndpointDisplay(apiDetails = {}) {
   const method = String(apiDetails?.method || "").toUpperCase();
-  const resolved =
-    apiDetails?.full_url_resolved ||
-    apiDetails?.full_url_template ||
-    apiDetails?.path ||
-    "";
-  const template = apiDetails?.full_url_template || apiDetails?.path || "";
   const baseUrl = apiDetails?.base_url || "";
   const path = apiDetails?.path || "";
+
+  const hasBaseUrl = !!String(baseUrl).trim();
+
+  let resolved = "";
+  let warning = "";
+
+  if (!hasBaseUrl) {
+    resolved = "";
+    warning =
+      "Full endpoint URL not available because base URL is not configured for this environment.";
+  } else {
+    try {
+      resolved = new URL(path, baseUrl).toString();
+    } catch {
+      resolved = "";
+      warning = "Invalid base URL or path. Unable to construct full endpoint.";
+    }
+  }
 
   return {
     method,
     resolved,
-    template,
     baseUrl,
     path,
-    summary: `${method} ${resolved}`.trim(),
+    warning,
+    hasBaseUrl,
+    summary: `${method} ${path}`.trim(),
   };
 }
 export default function GeneratorPage({
@@ -752,10 +765,25 @@ export default function GeneratorPage({
 
                         <div style={styles.previewSection}>
                           <div style={styles.previewLabel}>Full Endpoint</div>
-                          <pre style={styles.previewCodeBlockLight}>
-                            {getEndpointDisplay(selectedCase.api_details)
-                              .resolved || "-"}
-                          </pre>
+                          {(() => {
+                            const ep = getEndpointDisplay(
+                              selectedCase.api_details,
+                            );
+
+                            return (
+                              <>
+                                <pre style={styles.previewCodeBlockLight}>
+                                  {ep.resolved || "Not available"}
+                                </pre>
+
+                                {!ep.hasBaseUrl && (
+                                  <div style={styles.endpointWarning}>
+                                    ⚠ {ep.warning}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
 
                         <div style={styles.previewGrid}>
@@ -1219,6 +1247,16 @@ const styles = {
     minWidth: 0,
     margin: 0,
     background: "#f8fafc",
+  },
+  endpointWarning: {
+    marginTop: 8,
+    fontSize: 12,
+    color: "#b42318",
+    background: "#fff5f5",
+    border: "1px solid #fecaca",
+    padding: "8px 10px",
+    borderRadius: 8,
+    lineHeight: 1.4,
   },
 
   notice: {

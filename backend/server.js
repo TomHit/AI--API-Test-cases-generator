@@ -6,7 +6,10 @@ import { generateTestPlan } from "./src/services/generator.js";
 import { renderCsvFromTestPlan } from "./src/services/csvRenderer.js";
 
 import { loadOpenApiDoc } from "./src/services/openapiLoader.js";
-import { extractEndpoints } from "./src/services/openapiParser.js";
+import {
+  extractEndpointsLite,
+  extractEndpointsFull,
+} from "./src/services/openapiParser.js";
 
 process.on("uncaughtException", (err) =>
   console.error("UNCAUGHT EXCEPTION:", err),
@@ -144,7 +147,7 @@ app.get("/api/projects/:id/endpoints", async (req, res) => {
       specSourceOverride: specSource || null,
     });
 
-    const endpoints = extractEndpoints(doc);
+    const endpoints = extractEndpointsLite(doc);
 
     console.log("ENDPOINTS COUNT:", endpoints.length);
 
