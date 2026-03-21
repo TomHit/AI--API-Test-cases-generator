@@ -3,13 +3,41 @@ function normalizeMethod(method) {
 }
 
 function getJsonSchemaFromContent(content) {
-  return (
-    content?.["application/json"]?.schema ||
-    content?.["application/*+json"]?.schema ||
-    null
-  );
+  if (!content || typeof content !== "object") return null;
+
+  if (content["application/json"]?.schema)
+    return content["application/json"].schema;
+  if (content["application/*+json"]?.schema)
+    return content["application/*+json"].schema;
+
+  for (const [mediaType, mediaDef] of Object.entries(content)) {
+    if (mediaDef?.schema && mediaType.toLowerCase().includes("json")) {
+      return mediaDef.schema;
+    }
+  }
+
+  for (const mediaDef of Object.values(content)) {
+    if (mediaDef?.schema) return mediaDef.schema;
+  }
+
+  return null;
 }
 
+function getFirstSuccessResponse(endpoint) {
+  const matches = getSuccessResponses(endpoint).sort(
+    ([a], [b]) => Number(a) - Number(b),
+  );
+  return matches.length > 0 ? matches[0][1] : null;
+}
+
+function requestBodyHasOptionalFields(schema) {
+  if (!schema || !(schema.type === "object" || schema.properties)) return false;
+
+  const props = getSchemaProperties(schema);
+  const propKeys = Object.keys(props);
+  const required = Array.isArray(schema?.required) ? schema.required : [];
+  return propKeys.length > required.length;
+}
 function getSuccessResponses(endpoint) {
   const responses = endpoint?.responses || {};
   return Object.entries(responses).filter(([code]) =>
@@ -17,16 +45,12 @@ function getSuccessResponses(endpoint) {
   );
 }
 
-function getFirstSuccessResponse(endpoint) {
-  const matches = getSuccessResponses(endpoint);
-  return matches.length > 0 ? matches[0][1] : null;
-}
-
 function getResponseSchema(endpoint) {
-  const responses = endpoint?.responses || {};
+  const matches = getSuccessResponses(endpoint).sort(
+    ([a], [b]) => Number(a) - Number(b),
+  );
 
-  for (const [code, val] of Object.entries(responses)) {
-    if (!/^2\d\d$/.test(String(code))) continue;
+  for (const [, val] of matches) {
     const schema = getJsonSchemaFromContent(val?.content);
     if (schema) return schema;
   }
@@ -39,9 +63,11 @@ function getRequestBodySchema(endpoint) {
 }
 
 function getQueryParamNames(endpoint) {
-  return (endpoint?.params?.query || []).map((p) =>
-    String(p?.name || "").toLowerCase(),
-  );
+  const query = Array.isArray(endpoint?.params?.query)
+    ? endpoint.params.query
+    : [];
+
+  return query.map((p) => String(p?.name || "").toLowerCase());
 }
 
 function getSchemaProperties(schema) {
@@ -50,75 +76,140 @@ function getSchemaProperties(schema) {
     : {};
 }
 
+function walkSchema(schema, visit, seen = new Set()) {
+  if (!schema || typeof schema !== "object") return;
+  if (seen.has(schema)) return;
+
+  seen.add(schema);
+  visit(schema);
+
+  if (schema.properties && typeof schema.properties === "object") {
+    for (const child of Object.values(schema.properties)) {
+      walkSchema(child, visit, seen);
+    }
+  }
+
+  if (schema.items && typeof schema.items === "object") {
+    walkSchema(schema.items, visit, seen);
+  }
+
+  for (const key of ["oneOf", "anyOf", "allOf"]) {
+    if (Array.isArray(schema[key])) {
+      for (const child of schema[key]) {
+        walkSchema(child, visit, seen);
+      }
+    }
+  }
+
+  if (
+    schema.additionalProperties &&
+    typeof schema.additionalProperties === "object"
+  ) {
+    walkSchema(schema.additionalProperties, visit, seen);
+  }
+}
+
+function schemaSome(schema, predicate) {
+  let found = false;
+
+  walkSchema(schema, (node) => {
+    if (!found && predicate(node)) {
+      found = true;
+    }
+  });
+
+  return found;
+}
+
 function schemaHasRequiredFields(schema) {
   return Array.isArray(schema?.required) && schema.required.length > 0;
 }
 
 function schemaHasTypedFields(schema) {
-  const props = Object.values(getSchemaProperties(schema));
-  return props.some((p) => !!p?.type || !!p?.format);
+  return schemaSome(
+    schema,
+    (node) => !!node?.type || typeof node?.format === "string",
+  );
 }
 
 function schemaHasEnum(schema) {
-  const props = Object.values(getSchemaProperties(schema));
-  return props.some((p) => Array.isArray(p?.enum) && p.enum.length > 0);
+  return schemaSome(
+    schema,
+    (node) => Array.isArray(node?.enum) && node.enum.length > 0,
+  );
 }
 
 function schemaHasNestedObjects(schema) {
-  const props = Object.values(getSchemaProperties(schema));
-  return props.some((p) => p?.type === "object" || !!p?.properties);
+  let objectCount = 0;
+
+  walkSchema(schema, (node) => {
+    if (node?.type === "object" || !!node?.properties) {
+      objectCount += 1;
+    }
+  });
+
+  return objectCount > 1;
 }
 
 function schemaHasArrayFields(schema) {
-  const props = Object.values(getSchemaProperties(schema));
-  return props.some((p) => p?.type === "array" || !!p?.items);
+  return schemaSome(schema, (node) => node?.type === "array" || !!node?.items);
 }
 
 function schemaHasFormat(schema) {
-  const props = Object.values(getSchemaProperties(schema));
-  return props.some((p) => !!p?.format);
+  return schemaSome(
+    schema,
+    (node) => typeof node?.format === "string" && node.format.trim(),
+  );
 }
 
 function schemaHasNumericConstraints(schema) {
-  const props = Object.values(getSchemaProperties(schema));
-  return props.some(
-    (p) =>
-      typeof p?.minimum === "number" ||
-      typeof p?.maximum === "number" ||
-      typeof p?.exclusiveMinimum === "number" ||
-      typeof p?.exclusiveMaximum === "number",
+  return schemaSome(
+    schema,
+    (node) =>
+      typeof node?.minimum === "number" ||
+      typeof node?.maximum === "number" ||
+      node?.exclusiveMinimum !== undefined ||
+      node?.exclusiveMaximum !== undefined,
   );
 }
 
 function schemaHasStringConstraints(schema) {
-  const props = Object.values(getSchemaProperties(schema));
-  return props.some(
-    (p) => typeof p?.minLength === "number" || typeof p?.maxLength === "number",
+  return schemaSome(
+    schema,
+    (node) =>
+      typeof node?.minLength === "number" ||
+      typeof node?.maxLength === "number",
   );
 }
 
 function schemaHasPattern(schema) {
-  const props = Object.values(getSchemaProperties(schema));
-  return props.some((p) => typeof p?.pattern === "string" && p.pattern.trim());
+  return schemaSome(
+    schema,
+    (node) => typeof node?.pattern === "string" && node.pattern.trim(),
+  );
 }
 
 function schemaHasComposition(schema) {
-  return !!(
-    (Array.isArray(schema?.oneOf) && schema.oneOf.length > 0) ||
-    (Array.isArray(schema?.anyOf) && schema.anyOf.length > 0) ||
-    (Array.isArray(schema?.allOf) && schema.allOf.length > 0)
+  return schemaSome(
+    schema,
+    (node) =>
+      (Array.isArray(node?.oneOf) && node.oneOf.length > 0) ||
+      (Array.isArray(node?.anyOf) && node.anyOf.length > 0) ||
+      (Array.isArray(node?.allOf) && node.allOf.length > 0),
   );
 }
 
 function schemaHasDateOrDatetimeFields(schema) {
-  const props = Object.values(getSchemaProperties(schema));
-  return props.some((p) => p?.format === "date" || p?.format === "date-time");
+  return schemaSome(
+    schema,
+    (node) => node?.format === "date" || node?.format === "date-time",
+  );
 }
 
 function responseHasContentType(endpoint) {
   const res = getFirstSuccessResponse(endpoint);
   const content = res?.content || {};
-  return Object.keys(content).length > 0 || !!endpoint?.response?.contentType;
+  return Object.keys(content).length > 0;
 }
 
 function responseHasHeaders(endpoint) {
@@ -218,13 +309,6 @@ function endpointHasFilterParams(endpoint) {
   );
 }
 
-function requestBodyHasOptionalFields(schema) {
-  const props = getSchemaProperties(schema);
-  const propKeys = Object.keys(props);
-  const required = Array.isArray(schema?.required) ? schema.required : [];
-  return propKeys.length > required.length;
-}
-
 function requestContainsLikelyUniqueField(schema) {
   const props = getSchemaProperties(schema);
   const names = Object.keys(props).map((x) => String(x).toLowerCase());
@@ -240,6 +324,12 @@ export function profileEndpoint(endpoint) {
   const firstSuccessResponse = getFirstSuccessResponse(endpoint);
   const responseSchema = getResponseSchema(endpoint);
   const requestBodySchema = getRequestBodySchema(endpoint);
+  const firstSuccessStatusCode =
+    successResponses.length > 0
+      ? successResponses
+          .map(([code]) => String(code))
+          .sort((a, b) => Number(a) - Number(b))[0]
+      : null;
 
   return {
     exists: !!endpoint,
@@ -248,7 +338,7 @@ export function profileEndpoint(endpoint) {
 
     has2xxResponse: successResponses.length > 0,
     successStatusCodes: successResponses.map(([code]) => String(code)),
-    successResponseIs204: !!endpoint?.responses?.["204"],
+    successResponseIs204: firstSuccessStatusCode === "204",
     hasResponseContentType: responseHasContentType(endpoint),
     hasResponseHeaders: responseHasHeaders(endpoint),
     hasDocumentedErrorResponses: endpointHasDocumentedError(endpoint),

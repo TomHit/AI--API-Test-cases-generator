@@ -11,9 +11,24 @@ const RULES_PATH = path.join(
 );
 
 let cachedRules = null;
+let cachedRulesPromise = null;
 
 function clean(value) {
   return String(value ?? "").trim();
+}
+
+function normalizePriority(value) {
+  const v = clean(value).toUpperCase();
+  return ["P0", "P1", "P2", "P3"].includes(v) ? v : "P1";
+}
+
+function normalizeSeverity(value) {
+  const v = clean(value).toLowerCase();
+  return ["critical", "high", "medium", "low"].includes(v) ? v : "medium";
+}
+
+function isValidCategory(category) {
+  return ["contract", "schema", "negative", "auth"].includes(category);
 }
 
 function normalizeRuleRow(row) {
@@ -23,13 +38,31 @@ function normalizeRuleRow(row) {
     scenario: clean(row.scenario),
     applies_when: clean(row.applies_when),
     test_case_title: clean(row.test_case_title),
-    priority: clean(row.priority).toUpperCase(),
-    severity: clean(row.severity).toLowerCase(),
+    priority: normalizePriority(row.priority),
+    severity: normalizeSeverity(row.severity),
     method_filter: clean(row.method_filter),
     entity_scope: clean(row.entity_scope),
     notes: clean(row.notes),
     template_key: clean(row.template_key),
   };
+
+  if (!normalized.rule_id) {
+    throw new Error("Missing rule_id");
+  }
+
+  if (!normalized.category) {
+    throw new Error(`Missing category for rule_id=${normalized.rule_id}`);
+  }
+
+  if (!isValidCategory(normalized.category)) {
+    throw new Error(
+      `Invalid category '${normalized.category}' for rule_id=${normalized.rule_id}`,
+    );
+  }
+
+  if (!normalized.applies_when) {
+    throw new Error(`Missing applies_when for rule_id=${normalized.rule_id}`);
+  }
 
   if (
     normalized.template_key &&
@@ -46,25 +79,69 @@ function normalizeRuleRow(row) {
   return normalized;
 }
 
+function warnOnDuplicateRuleIds(rules) {
+  const seen = new Set();
+  const duplicates = new Set();
+
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    const id = String(rule?.rule_id || "")
+      .trim()
+      .toLowerCase();
+    if (!id) continue;
+
+    if (seen.has(id)) duplicates.add(id);
+    seen.add(id);
+  }
+
+  if (duplicates.size > 0) {
+    console.warn(
+      `Duplicate rule_id values found in rules CSV: ${Array.from(duplicates).join(", ")}`,
+    );
+  }
+}
+
+export function clearRuleCatalogCache() {
+  cachedRules = null;
+  cachedRulesPromise = null;
+}
+
 export async function loadRuleCatalog() {
   if (cachedRules) return cachedRules;
+  if (cachedRulesPromise) return cachedRulesPromise;
 
-  const rules = [];
+  cachedRulesPromise = (async () => {
+    if (!fs.existsSync(RULES_PATH)) {
+      throw new Error(`Rule catalog CSV not found at: ${RULES_PATH}`);
+    }
 
-  await new Promise((resolve, reject) => {
-    fs.createReadStream(RULES_PATH)
-      .pipe(csv())
-      .on("data", (row) => {
-        try {
-          rules.push(normalizeRuleRow(row));
-        } catch (err) {
-          console.error("Failed to normalize rule row:", row, err);
-        }
-      })
-      .on("end", resolve)
-      .on("error", reject);
-  });
+    const rules = [];
 
-  cachedRules = rules;
-  return rules;
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(RULES_PATH)
+        .pipe(csv())
+        .on("data", (row) => {
+          try {
+            const normalized = normalizeRuleRow(row);
+            if (normalized) rules.push(normalized);
+          } catch (err) {
+            console.error("Failed to normalize rule row", {
+              row,
+              message: err?.message || String(err),
+            });
+          }
+        })
+        .on("end", resolve)
+        .on("error", reject);
+    });
+
+    warnOnDuplicateRuleIds(rules);
+    cachedRules = rules;
+    return rules;
+  })();
+
+  try {
+    return await cachedRulesPromise;
+  } finally {
+    cachedRulesPromise = null;
+  }
 }

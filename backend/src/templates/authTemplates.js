@@ -1,6 +1,8 @@
 function buildModuleName(endpoint) {
   const tags = Array.isArray(endpoint?.tags) ? endpoint.tags : [];
-  if (tags.length > 0) return `${tags[0]} API`;
+  const firstTag = tags.find((tag) => String(tag || "").trim());
+
+  if (firstTag) return `${String(firstTag).trim()} API`;
   return `${endpoint?.method || "API"} ${endpoint?.path || ""}`.trim();
 }
 
@@ -17,7 +19,72 @@ function getResolvedValidRequest(endpoint) {
   };
 }
 
-function baseAuthCase(endpoint, { title, objective, priority = "critical" }) {
+function getFirstResolvedAuthNegative(endpoint, matcher) {
+  const negatives = endpoint?._resolvedTestData?.negative || {};
+  const buckets = [
+    negatives.missingRequired,
+    negatives.invalidType,
+    negatives.invalidEnum,
+    negatives.invalidFormat,
+    negatives.stringTooLong,
+    negatives.numericAboveMaximum,
+    negatives.nullRequiredField,
+    negatives.boundary,
+  ];
+
+  for (const bucket of buckets) {
+    if (!Array.isArray(bucket)) continue;
+
+    for (const item of bucket) {
+      if (matcher(item)) return item;
+    }
+  }
+
+  return null;
+}
+
+function applyResolvedRequestToCase(tc, resolvedNegative) {
+  if (!resolvedNegative?.request) return tc;
+
+  tc.test_data = {
+    path_params: resolvedNegative.request.path_params || {},
+    query_params: resolvedNegative.request.query_params || {},
+    headers: resolvedNegative.request.headers || {},
+    cookies: resolvedNegative.request.cookies || {},
+    request_body:
+      resolvedNegative.request.request_body !== undefined
+        ? resolvedNegative.request.request_body
+        : null,
+  };
+
+  return tc;
+}
+
+function setAuthorizationHeader(testData, value) {
+  testData.headers = { ...(testData.headers || {}) };
+  testData.headers.Authorization = value;
+  delete testData.headers.authorization;
+}
+
+function clearAuthMaterial(testData) {
+  testData.headers = { ...(testData.headers || {}) };
+
+  delete testData.headers.Authorization;
+  delete testData.headers.authorization;
+  delete testData.headers["X-API-Key"];
+  delete testData.headers["x-api-key"];
+  delete testData.headers.Cookie;
+  delete testData.headers.cookie;
+
+  testData.cookies = {};
+
+  testData.query_params = { ...(testData.query_params || {}) };
+  delete testData.query_params.access_token;
+  delete testData.query_params.api_key;
+  delete testData.query_params.token;
+}
+
+function baseAuthCase(endpoint, { title, objective, priority = "P0" }) {
   const method = String(endpoint?.method || "GET").toUpperCase();
   const path = endpoint?.path || "/";
   const moduleName = buildModuleName(endpoint);
@@ -74,18 +141,20 @@ export function makeAuthMissingCredentialsTemplate(endpoint) {
     priority: "critical",
   });
 
-  if (tc.test_data.headers) {
-    delete tc.test_data.headers.Authorization;
-    delete tc.test_data.headers.authorization;
-    delete tc.test_data.headers["X-API-Key"];
-    delete tc.test_data.headers["x-api-key"];
-    delete tc.test_data.headers.Cookie;
-    delete tc.test_data.headers.cookie;
+  const resolvedNegative = getFirstResolvedAuthNegative(
+    endpoint,
+    (item) =>
+      item?.location === "headers" ||
+      item?.location === "cookies" ||
+      item?.field === "Authorization" ||
+      item?.field === "authorization",
+  );
+
+  if (resolvedNegative?.request) {
+    applyResolvedRequestToCase(tc, resolvedNegative);
   }
 
-  if (tc.test_data.cookies) {
-    tc.test_data.cookies = {};
-  }
+  clearAuthMaterial(tc.test_data);
 
   tc.steps.push(
     "Do not send authentication credentials, session cookies, API keys, or authorization headers.",
@@ -125,11 +194,19 @@ export function makeAuthInvalidCredentialsTemplate(endpoint) {
     priority: "critical",
   });
 
-  tc.test_data.headers = {
-    ...(tc.test_data.headers || {}),
-    Authorization: "Bearer invalid-token-123",
-  };
-  delete tc.test_data.headers.authorization;
+  const resolvedNegative = getFirstResolvedAuthNegative(
+    endpoint,
+    (item) =>
+      item?.field === "Authorization" ||
+      item?.field === "authorization" ||
+      item?.location === "headers",
+  );
+
+  if (resolvedNegative?.request) {
+    applyResolvedRequestToCase(tc, resolvedNegative);
+  }
+
+  setAuthorizationHeader(tc.test_data, "Bearer invalid-token-123");
 
   tc.steps.push(
     "Send an invalid authentication token or invalid credentials in the authorization header.",
@@ -169,11 +246,19 @@ export function makeAuthExpiredCredentialsTemplate(endpoint) {
     priority: "high",
   });
 
-  tc.test_data.headers = {
-    ...(tc.test_data.headers || {}),
-    Authorization: "Bearer expired-token-123",
-  };
-  delete tc.test_data.headers.authorization;
+  const resolvedNegative = getFirstResolvedAuthNegative(
+    endpoint,
+    (item) =>
+      item?.field === "Authorization" ||
+      item?.field === "authorization" ||
+      item?.location === "headers",
+  );
+
+  if (resolvedNegative?.request) {
+    applyResolvedRequestToCase(tc, resolvedNegative);
+  }
+
+  setAuthorizationHeader(tc.test_data, "Bearer expired-token-123");
 
   tc.steps.push(
     "Send an expired authentication token or expired credentials in the authorization header.",
@@ -213,11 +298,19 @@ export function makeAuthForbiddenRoleTemplate(endpoint) {
     priority: "critical",
   });
 
-  tc.test_data.headers = {
-    ...(tc.test_data.headers || {}),
-    Authorization: "Bearer valid-but-low-privilege-token",
-  };
-  delete tc.test_data.headers.authorization;
+  const resolvedNegative = getFirstResolvedAuthNegative(
+    endpoint,
+    (item) =>
+      item?.field === "Authorization" ||
+      item?.field === "authorization" ||
+      item?.location === "headers",
+  );
+
+  if (resolvedNegative?.request) {
+    applyResolvedRequestToCase(tc, resolvedNegative);
+  }
+
+  setAuthorizationHeader(tc.test_data, "Bearer valid-but-low-privilege-token");
 
   tc.steps.push(
     "Send a valid authentication token that does not include the required role, permission, or scope.",

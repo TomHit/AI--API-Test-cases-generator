@@ -1,5 +1,11 @@
 function clone(value) {
-  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  if (value === undefined) return undefined;
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
 }
 
 function isObject(v) {
@@ -41,66 +47,30 @@ function inferStringFromPattern(pattern) {
   if (pattern === "^[A-Z]{2,5}$") return "TEST";
   if (pattern === "^\\d{10}$" || pattern === "^[0-9]{10}$") return "9876543210";
   if (pattern === "^\\d{6}$" || pattern === "^[0-9]{6}$") return "123456";
-  if (pattern.includes("@")) return "qa@example.com";
 
   return undefined;
 }
 
-function fieldNameHints(fieldName = "") {
+function genericFieldHint(fieldName = "", schema = {}) {
   const n = String(fieldName || "").toLowerCase();
 
-  if (n === "email" || n.endsWith("_email") || n.includes("email")) {
-    return "qa@example.com";
+  if (schema.format === "email" || n.includes("email")) return "qa@example.com";
+  if (schema.format === "uuid") return "123e4567-e89b-12d3-a456-426614174000";
+  if (schema.format === "date") return "2026-01-01";
+  if (schema.format === "date-time") return "2026-01-01T00:00:00Z";
+  if (schema.format === "uri" || schema.format === "url") {
+    return "https://example.com/resource";
   }
-  if (n === "password" || n.includes("password") || n === "passcode") {
-    return "Secret123!";
-  }
-  if (
-    n === "username" ||
-    n === "user_name" ||
-    n.includes("username") ||
-    n === "login"
-  ) {
-    return "testuser";
-  }
-  if (n === "phone" || n.includes("phone") || n.includes("mobile")) {
-    return "9876543210";
-  }
-  if (n === "first_name") return "John";
-  if (n === "last_name") return "Doe";
-  if (n === "fullname" || n === "full_name" || n === "name") return "John Doe";
-  if (n === "city") return "Mumbai";
-  if (n === "country") return "India";
-  if (n === "state") return "MH";
-  if (n === "zip" || n === "zipcode" || n === "postal_code") return "400001";
-  if (n === "url" || n.endsWith("_url") || n.includes("website")) {
-    return "https://example.com";
-  }
-  if (n === "authorization" || n === "auth") return "Bearer sample-token-123";
-  if (n.includes("bearer")) return "Bearer sample-token-123";
-  if (n === "token" || n.includes("token")) return "sample-token-123";
-  if (n === "api_key" || n === "apikey" || n.includes("api_key")) {
-    return "sample-api-key-123";
-  }
-  if (n.includes("session")) return "sample-session-token";
-  if (n.includes("csrf")) return "csrf-token-123";
-  if (n === "x-device-token" || n === "device-token") {
-    return "sample-device-token";
-  }
-  if (n === "otp" || n.includes("otp")) return "123456";
-  if (n === "code" || n.endsWith("_code")) return "123456";
-  if (n === "slug") return "sample-slug";
-  if (n === "title") return "Sample Title";
-  if (n === "description") return "Sample description";
-  if (n === "address") return "221B Baker Street";
-  if (n === "dob" || n === "birth_date") return "1990-01-01";
-  if (n === "date") return "2026-01-01";
-  if (n === "datetime" || n.endsWith("_at") || n.includes("timestamp")) {
-    return "2026-01-01T00:00:00Z";
-  }
-  if (n === "id" || n.endsWith("_id") || n === "userid" || n === "user_id") {
-    return "12345";
-  }
+  if (schema.format === "binary") return "sample-file.bin";
+
+  if (n === "id" || n.endsWith("_id") || n.endsWith("id")) return "12345";
+  if (n.includes("phone") || n.includes("mobile")) return "9876543210";
+  if (n.includes("otp") || n.endsWith("_code") || n === "code") return "123456";
+  if (n.includes("token")) return "sample-token-123";
+  if (n.includes("name")) return "sample_name";
+  if (n.includes("title")) return "Sample Title";
+  if (n.includes("description")) return "Sample description";
+  if (n.includes("slug")) return "sample-slug";
 
   return undefined;
 }
@@ -121,6 +91,33 @@ function coerceStringLength(value, schema = {}) {
   return out;
 }
 
+function fieldSignalScore(fieldName = "", schema = {}, required = false) {
+  let score = 0;
+
+  if (required) score += 100;
+  if (pickExample(schema) !== undefined) score += 40;
+  if (schema.default !== undefined) score += 25;
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) score += 20;
+  if (schema.format) score += 15;
+  if (schema.pattern) score += 10;
+  if (
+    typeof schema.minimum === "number" ||
+    typeof schema.maximum === "number" ||
+    typeof schema.minLength === "number" ||
+    typeof schema.maxLength === "number"
+  ) {
+    score += 8;
+  }
+
+  const n = String(fieldName || "").toLowerCase();
+  if (n.includes("id")) score += 3;
+  if (n.includes("email")) score += 4;
+  if (n.includes("name")) score += 2;
+  if (n.includes("date") || n.includes("time")) score += 2;
+
+  return score;
+}
+
 function resolveValidPrimitive(schema = {}, fieldName = "") {
   const exampleValue = firstDefined(
     pickExample(schema),
@@ -134,45 +131,23 @@ function resolveValidPrimitive(schema = {}, fieldName = "") {
     return { value: clone(exampleValue), source: "example/default/enum" };
   }
 
-  const fieldHint = fieldNameHints(fieldName);
+  const hint = genericFieldHint(fieldName, schema);
 
   if (
-    fieldHint !== undefined &&
+    hint !== undefined &&
     (schema.type === "integer" || schema.type === "number")
   ) {
     return {
       value: schema.type === "integer" ? 123 : 123.45,
-      source: "field_hint_numeric",
+      source: "numeric_hint",
     };
   }
 
-  if (fieldHint !== undefined && schema.type !== "boolean") {
+  if (hint !== undefined && schema.type !== "boolean") {
     return {
-      value: coerceStringLength(fieldHint, schema),
-      source: "field_hint",
+      value: coerceStringLength(hint, schema),
+      source: "generic_hint",
     };
-  }
-
-  if (schema.format === "uuid") {
-    return {
-      value: "123e4567-e89b-12d3-a456-426614174000",
-      source: "format",
-    };
-  }
-  if (schema.format === "email") {
-    return { value: "qa@example.com", source: "format" };
-  }
-  if (schema.format === "date") {
-    return { value: "2026-01-01", source: "format" };
-  }
-  if (schema.format === "date-time") {
-    return { value: "2026-01-01T00:00:00Z", source: "format" };
-  }
-  if (schema.format === "uri" || schema.format === "url") {
-    return { value: "https://example.com/resource", source: "format" };
-  }
-  if (schema.format === "binary") {
-    return { value: "sample-file.bin", source: "format" };
   }
 
   const patternValue = inferStringFromPattern(schema.pattern);
@@ -229,9 +204,7 @@ function resolveValidPrimitive(schema = {}, fieldName = "") {
     default: {
       let str = "sample";
 
-      if (fieldHint !== undefined) {
-        str = fieldHint;
-      } else if (typeof schema.minLength === "number" && schema.minLength > 0) {
+      if (typeof schema.minLength === "number" && schema.minLength > 0) {
         str = "a".repeat(Math.max(schema.minLength, 1));
       }
 
@@ -267,6 +240,43 @@ function mergeObjectSchemas(parts = []) {
 
   merged.required = Array.from(new Set(merged.required));
   return merged;
+}
+
+function resolveObjectSchema(schema = {}) {
+  const out = {};
+  const required = Array.isArray(schema.required)
+    ? new Set(schema.required)
+    : new Set();
+  const props = isObject(schema.properties) ? schema.properties : {};
+
+  const ranked = Object.entries(props)
+    .map(([name, propSchema]) => ({
+      name,
+      schema: propSchema || {},
+      required: required.has(name),
+      score: fieldSignalScore(name, propSchema || {}, required.has(name)),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const chosen =
+    required.size > 0 ? ranked.filter((x) => x.required) : ranked.slice(0, 4);
+
+  for (const item of chosen) {
+    const resolved = resolveValidValue(item.schema, item.name);
+    out[item.name] = resolved.value;
+  }
+
+  if (Object.keys(out).length === 0 && ranked.length > 0) {
+    const first = ranked[0];
+    const resolved = resolveValidValue(first.schema, first.name);
+    out[first.name] = resolved.value;
+  }
+
+  if (Object.keys(out).length === 0) {
+    return { value: {}, source: "object-empty" };
+  }
+
+  return { value: out, source: "object" };
 }
 
 function resolveValidValue(schema = {}, fieldName = "") {
@@ -316,38 +326,6 @@ function resolveValidValue(schema = {}, fieldName = "") {
   }
 
   return resolveValidPrimitive(schema, fieldName);
-}
-
-function resolveObjectSchema(schema = {}) {
-  const out = {};
-  const required = Array.isArray(schema.required)
-    ? new Set(schema.required)
-    : new Set();
-  const props = isObject(schema.properties) ? schema.properties : {};
-
-  const entries = Object.entries(props);
-
-  for (const [name, propSchema] of entries) {
-    const shouldInclude =
-      required.size === 0 ? Object.keys(out).length < 3 : required.has(name);
-
-    if (!shouldInclude) continue;
-
-    const resolved = resolveValidValue(propSchema || {}, name);
-    out[name] = resolved.value;
-  }
-
-  if (Object.keys(out).length === 0 && entries.length > 0) {
-    const [firstName, firstSchema] = entries[0];
-    const resolved = resolveValidValue(firstSchema || {}, firstName);
-    out[firstName] = resolved.value;
-  }
-
-  if (Object.keys(out).length === 0) {
-    return { value: {}, source: "object-empty" };
-  }
-
-  return { value: out, source: "object" };
 }
 
 function buildInvalidTypeValue(schema = {}, validValue) {
@@ -482,6 +460,14 @@ function buildBodyRequiredFieldNegatives(validBody, requestSchema = {}) {
   return out;
 }
 
+function normalizeHeaderName(name = "") {
+  const lower = String(name || "").toLowerCase();
+  if (lower === "accept") return "Accept";
+  if (lower === "content-type") return "Content-Type";
+  if (lower === "authorization") return "Authorization";
+  return name;
+}
+
 export function resolveEndpointTestData(endpoint) {
   const result = {
     valid: {
@@ -502,6 +488,7 @@ export function resolveEndpointTestData(endpoint) {
       boundary: [],
     },
     sourceMap: {},
+    body_style: undefined,
   };
 
   const groups = [
@@ -540,7 +527,9 @@ export function resolveEndpointTestData(endpoint) {
           };
         } else if (schema.type === "string" && resolved.value === "sample") {
           resolved = {
-            value: field?.name?.toLowerCase().includes("id")
+            value: String(field?.name || "")
+              .toLowerCase()
+              .includes("id")
               ? "123"
               : "sample-id",
             source: "path_string_sample",
@@ -548,8 +537,11 @@ export function resolveEndpointTestData(endpoint) {
         }
       }
 
-      result.valid[group.key][field.name] = resolved.value;
-      result.sourceMap[`${group.key}.${field.name}`] = resolved.source;
+      const fieldName =
+        group.key === "headers" ? normalizeHeaderName(field.name) : field.name;
+
+      result.valid[group.key][fieldName] = resolved.value;
+      result.sourceMap[`${group.key}.${fieldName}`] = resolved.source;
     }
   }
 
@@ -565,6 +557,8 @@ export function resolveEndpointTestData(endpoint) {
   }
 
   const preferredBodyType = endpoint?.requestBody?.preferredContentType;
+  result.body_style = preferredBodyType || undefined;
+
   const preferredBody = preferredBodyType
     ? endpoint?.requestBody?.content?.[preferredBodyType]
     : null;
@@ -590,7 +584,8 @@ export function resolveEndpointTestData(endpoint) {
   for (const group of groups) {
     for (const field of group.fields) {
       const schema = field?.schema || {};
-      const fieldName = field.name;
+      const fieldName =
+        group.key === "headers" ? normalizeHeaderName(field.name) : field.name;
       const validValue = result.valid[group.key][fieldName];
 
       if (field.required) {

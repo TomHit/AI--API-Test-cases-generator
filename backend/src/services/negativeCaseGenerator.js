@@ -97,9 +97,16 @@ function buildBaseCase(endpoint, title, objective) {
 }
 
 function getRequestSchema(endpoint) {
+  const preferredType = endpoint?.requestBody?.preferredContentType;
   return (
     endpoint?._resolvedRequestSchema ||
+    (preferredType
+      ? endpoint?.requestBody?.content?.[preferredType]?.schema
+      : null) ||
     endpoint?.requestBody?.content?.["application/json"]?.schema ||
+    endpoint?.requestBody?.content?.["application/x-www-form-urlencoded"]
+      ?.schema ||
+    endpoint?.requestBody?.content?.["multipart/form-data"]?.schema ||
     null
   );
 }

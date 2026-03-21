@@ -1,5 +1,30 @@
+function getJsonSchemaFromContent(content) {
+  if (!content || typeof content !== "object") return null;
+
+  if (content["application/json"]?.schema) {
+    return content["application/json"].schema;
+  }
+
+  if (content["application/*+json"]?.schema) {
+    return content["application/*+json"].schema;
+  }
+
+  for (const [mediaType, mediaDef] of Object.entries(content)) {
+    if (mediaDef?.schema && mediaType.toLowerCase().includes("json")) {
+      return mediaDef.schema;
+    }
+  }
+
+  for (const mediaDef of Object.values(content)) {
+    if (mediaDef?.schema) return mediaDef.schema;
+  }
+
+  return null;
+}
+
 /**
- * Rule: endpoint has a documented 2xx success response
+ * Legacy compatibility helper.
+ * Prefer endpointProfiler.has2xxResponse / ruleConditionMap fallbacks in new code.
  */
 export function shouldGenerateContractSuccess(endpoint) {
   if (endpoint?.responses && typeof endpoint.responses === "object") {
@@ -13,18 +38,17 @@ export function shouldGenerateContractSuccess(endpoint) {
 }
 
 /**
- * Rule: endpoint has a success response schema with properties or required fields
+ * Legacy compatibility helper.
+ * Prefer endpointProfiler.responseHasRequiredFields in new code.
  */
 export function shouldGenerateContractRequiredFields(endpoint) {
   if (endpoint?.responses && typeof endpoint.responses === "object") {
-    for (const [code, val] of Object.entries(endpoint.responses)) {
-      if (!/^2\d\d$/.test(String(code))) continue;
+    const successResponses = Object.entries(endpoint.responses)
+      .filter(([code]) => /^2\d\d$/.test(String(code)))
+      .sort(([a], [b]) => Number(a) - Number(b));
 
-      const content = val?.content || {};
-      const appJson =
-        content["application/json"] || content["application/*+json"];
-
-      const schema = appJson?.schema;
+    for (const [, val] of successResponses) {
+      const schema = getJsonSchemaFromContent(val?.content);
       if (!schema) continue;
 
       const hasRequired =

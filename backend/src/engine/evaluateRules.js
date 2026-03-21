@@ -2,12 +2,37 @@ import { loadRuleCatalog } from "../rules/loadRuleCatalog.js";
 import { RULE_CONDITION_MAP } from "../rules/ruleConditionMap.js";
 import { profileEndpoint } from "./endpointProfiler.js";
 
+const DEFAULT_INCLUDE = ["contract", "schema", "negative", "auth"];
+
+const PRIORITY_RANK = {
+  P0: 0,
+  P1: 1,
+  P2: 2,
+  P3: 3,
+  HIGH: 1,
+  MEDIUM: 2,
+  LOW: 3,
+};
+
+function isEndpointProfile(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    Object.prototype.hasOwnProperty.call(value, "exists") &&
+    Object.prototype.hasOwnProperty.call(value, "method")
+  );
+}
+
 function normalizeInclude(include) {
   if (!Array.isArray(include) || include.length === 0) {
-    return ["contract", "schema"];
+    return DEFAULT_INCLUDE;
   }
 
-  return include.map((x) => String(x).toLowerCase().trim()).filter(Boolean);
+  return [
+    ...new Set(
+      include.map((x) => String(x).toLowerCase().trim()).filter(Boolean),
+    ),
+  ];
 }
 
 function normalizeMethod(method) {
@@ -18,13 +43,26 @@ function methodMatchesFilter(endpoint, methodFilter) {
   if (!methodFilter) return true;
 
   const endpointMethod = normalizeMethod(endpoint?.method);
-  const allowed = String(methodFilter)
-    .split("|")
-    .map((m) => normalizeMethod(m))
-    .filter(Boolean);
+
+  const allowed = Array.isArray(methodFilter)
+    ? methodFilter.map((m) => normalizeMethod(m)).filter(Boolean)
+    : String(methodFilter)
+        .split("|")
+        .map((m) => normalizeMethod(m))
+        .filter(Boolean);
 
   if (allowed.length === 0) return true;
   return allowed.includes(endpointMethod);
+}
+
+function isUsableRule(rule) {
+  return (
+    rule &&
+    typeof rule === "object" &&
+    String(rule?.rule_id || "").trim() &&
+    String(rule?.category || "").trim() &&
+    String(rule?.applies_when || "").trim()
+  );
 }
 
 function dedupeRules(rules) {
@@ -32,7 +70,21 @@ function dedupeRules(rules) {
   const out = [];
 
   for (const rule of Array.isArray(rules) ? rules : []) {
-    const key = `${rule?.rule_id || ""}::${rule?.category || ""}`;
+    const key = [
+      String(rule?.rule_id || "")
+        .trim()
+        .toLowerCase(),
+      String(rule?.category || "")
+        .trim()
+        .toLowerCase(),
+      String(rule?.applies_when || "")
+        .trim()
+        .toLowerCase(),
+      String(rule?.method_filter || "")
+        .trim()
+        .toLowerCase(),
+    ].join("::");
+
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(rule);
@@ -41,22 +93,25 @@ function dedupeRules(rules) {
   return out;
 }
 
+function getPriorityRank(priority) {
+  const key = String(priority || "")
+    .trim()
+    .toUpperCase();
+  return PRIORITY_RANK[key] ?? 999;
+}
+
 export async function evaluateRules(
   endpoint,
   profileOrOptions = {},
   maybeOptions = {},
 ) {
-  const hasProfile =
-    profileOrOptions &&
-    typeof profileOrOptions === "object" &&
-    Object.prototype.hasOwnProperty.call(profileOrOptions, "exists") &&
-    Object.prototype.hasOwnProperty.call(profileOrOptions, "method");
-
+  const hasProfile = isEndpointProfile(profileOrOptions);
   const profile = hasProfile ? profileOrOptions : profileEndpoint(endpoint);
   const options = hasProfile ? maybeOptions : profileOrOptions;
 
   const include = normalizeInclude(options?.include);
-  const rules = await loadRuleCatalog();
+  const rulesRaw = await loadRuleCatalog();
+  const rules = Array.isArray(rulesRaw) ? rulesRaw : [];
   const matchedRules = [];
   const skipped = {
     category: [],
@@ -67,7 +122,17 @@ export async function evaluateRules(
   };
 
   for (const rule of rules) {
-    const category = String(rule?.category || "").toLowerCase();
+    if (!isUsableRule(rule)) {
+      skipped.errors.push({
+        rule_id: rule?.rule_id || null,
+        message: "Malformed rule object in catalog",
+      });
+      continue;
+    }
+
+    const category = String(rule?.category || "")
+      .toLowerCase()
+      .trim();
 
     if (!include.includes(category)) {
       skipped.category.push(rule?.rule_id);
@@ -91,7 +156,11 @@ export async function evaluateRules(
     }
 
     try {
-      if (conditionFn(endpoint, profile, options)) {
+      const passed = await Promise.resolve(
+        conditionFn(endpoint, profile, options),
+      );
+
+      if (passed) {
         matchedRules.push(rule);
       } else {
         skipped.conditionFalse.push({
@@ -104,17 +173,22 @@ export async function evaluateRules(
         rule_id: rule?.rule_id,
         message: err?.message || String(err),
       });
-      console.error("Rule evaluation failed:", rule?.rule_id, err);
+
+      console.error("Rule evaluation failed", {
+        rule_id: rule?.rule_id,
+        applies_when: rule?.applies_when,
+        method: endpoint?.method,
+        path: endpoint?.path,
+        message: err?.message || String(err),
+      });
     }
   }
 
   const deduped = dedupeRules(matchedRules);
 
   deduped.sort((a, b) => {
-    const ap = String(a?.priority || "");
-    const bp = String(b?.priority || "");
     return (
-      ap.localeCompare(bp) ||
+      getPriorityRank(a?.priority) - getPriorityRank(b?.priority) ||
       String(a?.rule_id || "").localeCompare(String(b?.rule_id || ""))
     );
   });

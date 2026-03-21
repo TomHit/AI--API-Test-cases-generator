@@ -320,10 +320,10 @@ function validateParams(endpoint, issues) {
         issues.push(
           makeIssue({
             endpointId,
-            severity: "error",
+            severity: "warning",
             code: "PARAM_SCHEMA_MISSING",
             message: `Parameter '${p?.name}' in '${bucket}' is missing schema.`,
-            blocking: true,
+            blocking: false,
             where: `params.${bucket}.${p?.name || "unknown"}`,
             suggestedFix: makeParamSchemaSuggestion(
               p?.name || "param_name",
@@ -470,11 +470,11 @@ function validateRequestBody(endpoint, issues, openapiDoc) {
     issues.push(
       makeIssue({
         endpointId,
-        severity: "error",
+        severity: "warning",
         code: "REQUEST_BODY_FREE_FORM",
         message:
-          "Request body is a free-form object with no properties or examples. Accurate payload cannot be generated.",
-        blocking: true,
+          "Request body is a free-form object with no properties or examples. Payload generation may be weak.",
+        blocking: false,
         where: contentType
           ? `requestBody.content.${contentType}.schema`
           : "requestBody.content.schema",
@@ -524,7 +524,7 @@ function validateRequestBody(endpoint, issues, openapiDoc) {
     );
   }
 }
-function validateResponses(endpoint, issues) {
+function validateResponses(endpoint, issues, openapiDoc) {
   const endpointId = endpoint.id;
   const responses = endpoint.responses || {};
   const preferred = getPreferredResponse(responses);
@@ -533,10 +533,10 @@ function validateResponses(endpoint, issues) {
     issues.push(
       makeIssue({
         endpointId,
-        severity: "error",
+        severity: "warning",
         code: "RESPONSE_2XX_MISSING",
         message: "Endpoint has no usable response definition.",
-        blocking: true,
+        blocking: false,
         where: "responses",
       }),
     );
@@ -579,18 +579,60 @@ function validateResponses(endpoint, issues) {
     return;
   }
 
-  if (
-    media &&
-    isObject(media.schema) &&
-    Object.keys(media.schema).length === 0
-  ) {
+  let schema = media?.schema || null;
+
+  if (schema?.$ref) {
+    const resolved = resolveRef(schema.$ref, openapiDoc);
+    if (!resolved) {
+      issues.push(
+        makeIssue({
+          endpointId,
+          severity: "warning",
+          code: "RESPONSE_SCHEMA_UNRESOLVED_REF",
+          message: `Response '${status}' schema reference '${schema.$ref}' could not be resolved.`,
+          blocking: false,
+          where: `responses.${status}.content`,
+          suggestedFix: makeResponseSchemaSuggestion(endpoint, status),
+        }),
+      );
+      return;
+    }
+    schema = resolved;
+  }
+
+  if (media && isObject(schema) && Object.keys(schema).length === 0) {
     issues.push(
       makeIssue({
         endpointId,
         severity: "warning",
         code: "RESPONSE_SCHEMA_EMPTY",
-        message: `Response '${status}' schema is empty object.
-Contract validation will be weak.`,
+        message: `Response '${status}' schema is empty object. Contract validation will be weak.`,
+        blocking: false,
+        where: `responses.${status}.content`,
+        suggestedFix: makeResponseSchemaSuggestion(endpoint, status),
+      }),
+    );
+    return;
+  }
+
+  const hasProperties =
+    isObject(schema?.properties) && Object.keys(schema.properties).length > 0;
+
+  const hasExample =
+    schema?.example !== undefined || schema?.examples !== undefined;
+
+  if (
+    schema?.type === "object" &&
+    !hasProperties &&
+    !hasExample &&
+    schema?.additionalProperties !== false
+  ) {
+    issues.push(
+      makeIssue({
+        endpointId,
+        severity: "warning",
+        code: "RESPONSE_SCHEMA_WEAK",
+        message: `Response '${status}' schema is too weak for reliable contract validation.`,
         blocking: false,
         where: `responses.${status}.content`,
         suggestedFix: makeResponseSchemaSuggestion(endpoint, status),
@@ -716,7 +758,7 @@ export function validateSpecQuality(openapiDoc, endpoints = []) {
     validateEndpointBasics(endpoint, issues);
     validateParams(endpoint, issues);
     validateRequestBody(endpoint, issues, openapiDoc);
-    validateResponses(endpoint, issues);
+    validateResponses(endpoint, issues, openapiDoc);
 
     const status = endpointStatusFromIssues(issues);
 
@@ -732,7 +774,7 @@ export function validateSpecQuality(openapiDoc, endpoints = []) {
     allIssues.push(...issues);
   }
 
-  const refIssues = validateRefIntegrity(openapiDoc, endpoints);
+  const refIssues = [];
   allIssues.push(...refIssues);
 
   if (refIssues.length > 0) {

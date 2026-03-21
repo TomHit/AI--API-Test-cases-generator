@@ -31,6 +31,20 @@ function methodTone(method) {
   return { bg: "#f1f5f9", color: "#334155" };
 }
 
+function endpointDisplay(row) {
+  return {
+    baseUrl: row?.api_details?.base_url || "-",
+    fullResolved:
+      row?.api_details?.full_url_resolved ||
+      row?.api_details?.full_url_template ||
+      row?.api_details?.path ||
+      "-",
+    fullTemplate:
+      row?.api_details?.full_url_template || row?.api_details?.path || "-",
+    path: row?.api_details?.path || "-",
+  };
+}
+
 function ReviewPill({ needsReview }) {
   return (
     <span
@@ -67,6 +81,7 @@ export default function TestCaseDrawer({ open, row, onClose }) {
 
   const testTypeTone = typeTone(row?.test_type);
   const httpTone = methodTone(row?.api_details?.method);
+  const endpointInfo = endpointDisplay(row);
 
   return (
     <div style={styles.overlay} onClick={onClose}>
@@ -109,12 +124,31 @@ export default function TestCaseDrawer({ open, row, onClose }) {
         <div style={styles.metaGrid}>
           <InfoCard label="Module">{row?.module || "-"}</InfoCard>
           <InfoCard label="Priority">{row?.priority || "-"}</InfoCard>
-          <InfoCard label="Path" mono>
-            {row?.api_details?.path || "-"}
-          </InfoCard>
           <InfoCard label="Needs Review">
             {reviewLabel(row?.needs_review)}
           </InfoCard>
+          <InfoCard label="Method">{row?.api_details?.method || "-"}</InfoCard>
+        </div>
+
+        <div style={styles.fullWidthCards}>
+          <div style={styles.metaCardWide}>
+            <div style={styles.metaLabel}>Full Endpoint</div>
+            <div style={styles.endpointBlock}>{endpointInfo.fullResolved}</div>
+          </div>
+
+          <div style={styles.metaCardWide}>
+            <div style={styles.metaLabel}>Template Endpoint</div>
+            <div style={styles.endpointBlock}>{endpointInfo.fullTemplate}</div>
+          </div>
+
+          <div style={styles.metaGrid}>
+            <InfoCard label="Base URL" mono>
+              {endpointInfo.baseUrl}
+            </InfoCard>
+            <InfoCard label="Path" mono>
+              {endpointInfo.path}
+            </InfoCard>
+          </div>
         </div>
 
         <div style={styles.fullWidthCards}>
@@ -352,6 +386,20 @@ const styles = {
     color: "#0f172a",
     lineHeight: 1.55,
     wordBreak: "break-word",
+  },
+
+  endpointBlock: {
+    fontFamily:
+      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    fontSize: 12,
+    color: "#0f172a",
+    background: "#ffffff",
+    border: "1px solid #dbe4f0",
+    borderRadius: 12,
+    padding: "10px 12px",
+    lineHeight: 1.6,
+    wordBreak: "break-all",
+    overflowWrap: "anywhere",
   },
 
   section: {

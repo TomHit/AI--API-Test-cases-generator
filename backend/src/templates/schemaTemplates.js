@@ -1,14 +1,121 @@
 function buildModuleName(endpoint) {
   const tags = Array.isArray(endpoint?.tags) ? endpoint.tags : [];
-  if (tags.length > 0) return `${tags[0]} API`;
+  const firstTag = tags.find((tag) => String(tag || "").trim());
+
+  if (firstTag) return `${String(firstTag).trim()} API`;
   return `${endpoint?.method || "API"} ${endpoint?.path || ""}`.trim();
+}
+
+function isObject(v) {
+  return v && typeof v === "object" && !Array.isArray(v);
+}
+
+function getJsonSchemaFromContent(content) {
+  if (!content || typeof content !== "object") return null;
+
+  if (content["application/json"]?.schema) {
+    return content["application/json"].schema;
+  }
+
+  if (content["application/*+json"]?.schema) {
+    return content["application/*+json"].schema;
+  }
+
+  for (const [mediaType, mediaDef] of Object.entries(content)) {
+    if (mediaDef?.schema && mediaType.toLowerCase().includes("json")) {
+      return mediaDef.schema;
+    }
+  }
+
+  for (const mediaDef of Object.values(content)) {
+    if (mediaDef?.schema) return mediaDef.schema;
+  }
+
+  return null;
+}
+
+function getSuccessResponses(endpoint) {
+  const responses = endpoint?.responses || {};
+  return Object.entries(responses)
+    .filter(([code]) => /^2\d\d$/.test(String(code)))
+    .sort(([a], [b]) => Number(a) - Number(b));
+}
+
+function walkSchema(schema, visit, seen = new Set()) {
+  if (!schema || typeof schema !== "object") return;
+  if (seen.has(schema)) return;
+
+  seen.add(schema);
+  visit(schema);
+
+  if (schema.properties && typeof schema.properties === "object") {
+    for (const child of Object.values(schema.properties)) {
+      walkSchema(child, visit, seen);
+    }
+  }
+
+  if (schema.items && typeof schema.items === "object") {
+    walkSchema(schema.items, visit, seen);
+  }
+
+  for (const key of ["oneOf", "anyOf", "allOf"]) {
+    if (Array.isArray(schema[key])) {
+      for (const child of schema[key]) {
+        walkSchema(child, visit, seen);
+      }
+    }
+  }
+
+  if (
+    schema.additionalProperties &&
+    typeof schema.additionalProperties === "object"
+  ) {
+    walkSchema(schema.additionalProperties, visit, seen);
+  }
 }
 
 function buildHeaders(endpoint) {
   const headers = {};
-  if (Array.isArray(endpoint?.security) && endpoint.security.length > 0) {
+  const security = Array.isArray(endpoint?.security) ? endpoint.security : [];
+
+  if (security.length > 0) {
     headers.Authorization = "Bearer <valid_token>";
   }
+
+  const headerParams = Array.isArray(endpoint?.params?.header)
+    ? endpoint.params.header
+    : [];
+
+  for (const p of headerParams) {
+    const name = String(p?.name || "").trim();
+    if (!name) continue;
+
+    const lower = name.toLowerCase();
+
+    if (lower === "authorization") {
+      headers[name] = headers[name] || "Bearer <valid_token>";
+      continue;
+    }
+
+    if (lower === "accept") {
+      headers[name] = "application/json";
+      continue;
+    }
+
+    if (lower === "content-type") {
+      headers[name] = "application/json";
+      continue;
+    }
+
+    if (p?.required) {
+      headers[name] = `<valid_${name}>`;
+    }
+  }
+
+  if (!Object.keys(headers).some((k) => k.toLowerCase() === "accept")) {
+    headers.Accept = "application/json";
+  }
+
   return headers;
 }
 
@@ -17,9 +124,13 @@ function buildPathParams(endpoint) {
   const pathParams = Array.isArray(endpoint?.params?.path)
     ? endpoint.params.path
     : [];
+
   for (const p of pathParams) {
-    out[p.name] = `<valid_${p.name}>`;
+    const name = String(p?.name || "").trim();
+    if (!name) continue;
+    out[name] = `<valid_${name}>`;
   }
+
   return out;
 }
 
@@ -28,42 +139,88 @@ function buildQueryParams(endpoint) {
   const query = Array.isArray(endpoint?.params?.query)
     ? endpoint.params.query
     : [];
+
   for (const p of query) {
-    out[p.name] = p.required
-      ? `<provide_valid_${p.name}>`
-      : `<optional_${p.name}>`;
+    const name = String(p?.name || "").trim();
+    if (!name) continue;
+
+    out[name] = p?.required ? `<provide_valid_${name}>` : `<optional_${name}>`;
   }
+
   return out;
 }
 
-function buildRequestBody(endpoint) {
-  const schema =
-    endpoint?.requestBody?.content?.["application/json"]?.schema ||
-    endpoint?.requestBody?.content?.["application/*+json"]?.schema ||
-    null;
-
-  if (!schema) return null;
-
-  const props = schema?.properties || {};
-  const body = {};
-
-  for (const key of Object.keys(props)) {
-    body[key] = `<valid_${key}>`;
+function buildValueFromSchema(schema, fieldName = "value") {
+  if (!schema || typeof schema !== "object") {
+    return `<valid_${fieldName}>`;
   }
 
-  return Object.keys(body).length > 0 ? body : {};
+  if (schema.example !== undefined) return schema.example;
+
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+    return schema.enum[0];
+  }
+
+  if (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) {
+    return buildValueFromSchema(schema.oneOf[0], fieldName);
+  }
+
+  if (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) {
+    return buildValueFromSchema(schema.anyOf[0], fieldName);
+  }
+
+  if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
+    const merged = {};
+
+    for (const item of schema.allOf) {
+      const value = buildValueFromSchema(item, fieldName);
+      if (isObject(value)) {
+        Object.assign(merged, value);
+      }
+    }
+
+    if (Object.keys(merged).length > 0) return merged;
+  }
+
+  if (schema.type === "object" || schema.properties) {
+    const out = {};
+    const props = isObject(schema.properties) ? schema.properties : {};
+
+    for (const [key, value] of Object.entries(props)) {
+      out[key] = buildValueFromSchema(value, key);
+    }
+
+    return out;
+  }
+
+  if (schema.type === "array" || schema.items) {
+    return [buildValueFromSchema(schema.items || {}, `${fieldName}_item`)];
+  }
+
+  if (schema.format === "email") return "qa.user@example.com";
+  if (schema.format === "uuid") return "123e4567-e89b-12d3-a456-426614174000";
+  if (schema.format === "date-time") return "2026-01-01T00:00:00Z";
+  if (schema.format === "date") return "2026-01-01";
+  if (schema.format === "uri" || schema.format === "url") {
+    return "https://example.com";
+  }
+
+  if (schema.type === "boolean") return false;
+  if (schema.type === "integer") return 1;
+  if (schema.type === "number") return 1.5;
+
+  return `<valid_${fieldName}>`;
+}
+
+function buildRequestBody(endpoint) {
+  const schema = getRequestSchema(endpoint);
+  if (!schema) return null;
+  return buildValueFromSchema(schema, "request_body");
 }
 
 function getResponseSchema(endpoint) {
-  const responses = endpoint?.responses || {};
-  for (const code of Object.keys(responses)) {
-    if (!/^2\d\d$/.test(String(code))) continue;
-
-    const schema =
-      responses[code]?.content?.["application/json"]?.schema ||
-      responses[code]?.content?.["application/*+json"]?.schema ||
-      null;
-
+  for (const [, response] of getSuccessResponses(endpoint)) {
+    const schema = getJsonSchemaFromContent(response?.content);
     if (schema) return schema;
   }
 
@@ -71,11 +228,7 @@ function getResponseSchema(endpoint) {
 }
 
 function getRequestSchema(endpoint) {
-  return (
-    endpoint?.requestBody?.content?.["application/json"]?.schema ||
-    endpoint?.requestBody?.content?.["application/*+json"]?.schema ||
-    null
-  );
+  return getJsonSchemaFromContent(endpoint?.requestBody?.content);
 }
 
 function getSchemaRequiredFields(schema) {
@@ -83,81 +236,150 @@ function getSchemaRequiredFields(schema) {
 }
 
 function getSchemaProperties(schema) {
-  return schema?.properties && typeof schema.properties === "object"
+  return isObject(schema?.properties)
     ? Object.keys(schema.properties).slice(0, 20)
     : [];
 }
 
 function getSchemaEnumFields(schema) {
-  const props = schema?.properties || {};
-  return Object.entries(props)
-    .filter(([, val]) => Array.isArray(val?.enum) && val.enum.length > 0)
-    .map(([key]) => key)
-    .slice(0, 10);
+  const out = [];
+
+  walkSchema(schema, (node) => {
+    if (!isObject(node?.properties)) return;
+
+    for (const [key, val] of Object.entries(node.properties)) {
+      if (Array.isArray(val?.enum) && val.enum.length > 0) {
+        out.push(key);
+      }
+    }
+  });
+
+  return Array.from(new Set(out)).slice(0, 10);
 }
 
 function getSchemaNestedObjectFields(schema) {
-  const props = schema?.properties || {};
-  return Object.entries(props)
-    .filter(([, val]) => val?.type === "object" || !!val?.properties)
-    .map(([key]) => key)
-    .slice(0, 10);
+  const out = [];
+
+  walkSchema(schema, (node) => {
+    if (!isObject(node?.properties)) return;
+
+    for (const [key, val] of Object.entries(node.properties)) {
+      if (val?.type === "object" || !!val?.properties) {
+        out.push(key);
+      }
+    }
+  });
+
+  return Array.from(new Set(out)).slice(0, 10);
 }
 
 function getSchemaArrayFields(schema) {
-  const props = schema?.properties || {};
-  return Object.entries(props)
-    .filter(([, val]) => val?.type === "array" || !!val?.items)
-    .map(([key]) => key)
-    .slice(0, 10);
+  const out = [];
+
+  walkSchema(schema, (node) => {
+    if (!isObject(node?.properties)) return;
+
+    for (const [key, val] of Object.entries(node.properties)) {
+      if (val?.type === "array" || !!val?.items) {
+        out.push(key);
+      }
+    }
+  });
+
+  return Array.from(new Set(out)).slice(0, 10);
 }
 
 function getSchemaFormatFields(schema) {
-  const props = schema?.properties || {};
-  return Object.entries(props)
-    .filter(([, val]) => typeof val?.format === "string")
-    .map(([key, val]) => `${key}(${val.format})`)
-    .slice(0, 10);
+  const out = [];
+
+  walkSchema(schema, (node) => {
+    if (!isObject(node?.properties)) return;
+
+    for (const [key, val] of Object.entries(node.properties)) {
+      if (typeof val?.format === "string") {
+        out.push(`${key}(${val.format})`);
+      }
+    }
+  });
+
+  return Array.from(new Set(out)).slice(0, 10);
 }
 
 function getSchemaNumericConstraintFields(schema) {
-  const props = schema?.properties || {};
-  return Object.entries(props)
-    .filter(
-      ([, val]) => val?.minimum !== undefined || val?.maximum !== undefined,
-    )
-    .map(([key]) => key)
-    .slice(0, 10);
+  const out = [];
+
+  walkSchema(schema, (node) => {
+    if (!isObject(node?.properties)) return;
+
+    for (const [key, val] of Object.entries(node.properties)) {
+      if (
+        val?.minimum !== undefined ||
+        val?.maximum !== undefined ||
+        val?.exclusiveMinimum !== undefined ||
+        val?.exclusiveMaximum !== undefined
+      ) {
+        out.push(key);
+      }
+    }
+  });
+
+  return Array.from(new Set(out)).slice(0, 10);
 }
 
 function getSchemaStringConstraintFields(schema) {
-  const props = schema?.properties || {};
-  return Object.entries(props)
-    .filter(
-      ([, val]) => val?.minLength !== undefined || val?.maxLength !== undefined,
-    )
-    .map(([key]) => key)
-    .slice(0, 10);
+  const out = [];
+
+  walkSchema(schema, (node) => {
+    if (!isObject(node?.properties)) return;
+
+    for (const [key, val] of Object.entries(node.properties)) {
+      if (val?.minLength !== undefined || val?.maxLength !== undefined) {
+        out.push(key);
+      }
+    }
+  });
+
+  return Array.from(new Set(out)).slice(0, 10);
 }
 
 function getSchemaPatternFields(schema) {
-  const props = schema?.properties || {};
-  return Object.entries(props)
-    .filter(([, val]) => typeof val?.pattern === "string")
-    .map(([key]) => key)
-    .slice(0, 10);
+  const out = [];
+
+  walkSchema(schema, (node) => {
+    if (!isObject(node?.properties)) return;
+
+    for (const [key, val] of Object.entries(node.properties)) {
+      if (typeof val?.pattern === "string") {
+        out.push(key);
+      }
+    }
+  });
+
+  return Array.from(new Set(out)).slice(0, 10);
 }
 
 function hasSchemaComposition(schema) {
-  return !!(schema?.oneOf || schema?.anyOf || schema?.allOf);
+  let found = false;
+
+  walkSchema(schema, (node) => {
+    if (
+      found ||
+      (Array.isArray(node?.oneOf) && node.oneOf.length > 0) ||
+      (Array.isArray(node?.anyOf) && node.anyOf.length > 0) ||
+      (Array.isArray(node?.allOf) && node.allOf.length > 0)
+    ) {
+      found = true;
+    }
+  });
+
+  return found;
 }
 
 function getSuccessStatus(endpoint) {
-  const responses = endpoint?.responses || {};
-  if (responses["200"]) return 200;
-  if (responses["201"]) return 201;
-  if (responses["202"]) return 202;
-  if (responses["204"]) return 204;
+  const successCodes = getSuccessResponses(endpoint).map(([code]) =>
+    Number(code),
+  );
+  if (successCodes.length > 0) return successCodes[0];
 
   const status = endpoint?.response?.status;
   if (typeof status === "number") return status;
@@ -166,9 +388,7 @@ function getSuccessStatus(endpoint) {
 }
 
 function hasRequestBody(endpoint) {
-  const method = String(endpoint?.method || "GET").toUpperCase();
-  if (method === "GET" || method === "DELETE") return false;
-  return !!buildRequestBody(endpoint);
+  return !!getRequestSchema(endpoint);
 }
 
 function describeSchemaType(schema = {}) {
@@ -178,13 +398,42 @@ function describeSchemaType(schema = {}) {
   return "value";
 }
 
+function getActualRequestBody(endpoint) {
+  const body =
+    endpoint?._resolvedTestData?.valid?.body ?? buildRequestBody(endpoint);
+
+  return body && typeof body === "object" && !Array.isArray(body) ? body : {};
+}
+
+function getActualRequestBodyFields(endpoint) {
+  return Object.keys(getActualRequestBody(endpoint));
+}
+
+function getRequestSchemaPropertyMap(endpoint) {
+  const schema = getRequestSchema(endpoint);
+  const props = isObject(schema?.properties) ? schema.properties : {};
+  return props;
+}
+
+function buildFormatAssertion(fieldName, format, prefix = "Response field") {
+  const fmt = String(format || "").toLowerCase();
+
+  if (fmt === "email") return `${prefix} '${fieldName}' follows email format.`;
+  if (fmt === "date-time") {
+    return `${prefix} '${fieldName}' follows date-time format.`;
+  }
+  if (fmt === "date") return `${prefix} '${fieldName}' follows date format.`;
+  if (fmt === "uuid") return `${prefix} '${fieldName}' follows UUID format.`;
+  if (fmt === "uri" || fmt === "url") {
+    return `${prefix} '${fieldName}' follows URI format.`;
+  }
+
+  return `${prefix} '${fieldName}' follows documented format '${format}'.`;
+}
+
 function buildResponseAssertions(endpoint, maxFields = 5) {
   const schema = getResponseSchema(endpoint);
-  const props =
-    schema?.properties && typeof schema.properties === "object"
-      ? schema.properties
-      : {};
-
+  const props = isObject(schema?.properties) ? schema.properties : {};
   const entries = Object.entries(props).slice(0, maxFields);
   const assertions = [];
 
@@ -203,8 +452,10 @@ function buildResponseAssertions(endpoint, maxFields = 5) {
       );
     }
 
-    if (fieldSchema?.format === "email") {
-      assertions.push(`Response field '${fieldName}' follows email format.`);
+    if (typeof fieldSchema?.format === "string") {
+      assertions.push(
+        buildFormatAssertion(fieldName, fieldSchema.format, "Response field"),
+      );
     }
 
     if (Array.isArray(fieldSchema?.enum) && fieldSchema.enum.length > 0) {
@@ -218,16 +469,12 @@ function buildResponseAssertions(endpoint, maxFields = 5) {
 }
 
 function buildRequestAssertions(endpoint, maxFields = 5) {
-  const schema = getRequestSchema(endpoint);
-  const props =
-    schema?.properties && typeof schema.properties === "object"
-      ? schema.properties
-      : {};
-
-  const entries = Object.entries(props).slice(0, maxFields);
+  const actualFields = getActualRequestBodyFields(endpoint).slice(0, maxFields);
+  const props = getRequestSchemaPropertyMap(endpoint);
   const assertions = [];
 
-  for (const [fieldName, fieldSchema] of entries) {
+  for (const fieldName of actualFields) {
+    const fieldSchema = props[fieldName] || {};
     const fieldType = describeSchemaType(fieldSchema);
 
     if (fieldType === "object") {
@@ -240,8 +487,10 @@ function buildRequestAssertions(endpoint, maxFields = 5) {
       );
     }
 
-    if (fieldSchema?.format === "email") {
-      assertions.push(`Request field '${fieldName}' follows email format.`);
+    if (typeof fieldSchema?.format === "string") {
+      assertions.push(
+        buildFormatAssertion(fieldName, fieldSchema.format, "Request field"),
+      );
     }
 
     if (Array.isArray(fieldSchema?.enum) && fieldSchema.enum.length > 0) {
@@ -275,6 +524,7 @@ function baseCase(endpoint, { title, objective, priority = "P1" }) {
       path_params: buildPathParams(endpoint),
       query_params: buildQueryParams(endpoint),
       headers: buildHeaders(endpoint),
+      cookies: {},
       request_body: hasRequestBody(endpoint)
         ? buildRequestBody(endpoint)
         : null,
@@ -391,6 +641,7 @@ export function makeSchemaFieldTypesTemplate(endpoint) {
   const successStatus = getSuccessStatus(endpoint);
   const schema = getResponseSchema(endpoint);
   const props = getSchemaProperties(schema);
+  const responseAssertions = buildResponseAssertions(endpoint, 5);
 
   const tc = baseCase(endpoint, {
     title: `Verify ${method} ${path} response field types match the schema`,
@@ -406,8 +657,8 @@ export function makeSchemaFieldTypesTemplate(endpoint) {
   tc.expected_results = [
     `The API responds with HTTP ${successStatus}.`,
     "Response fields match the documented primitive and structured data types.",
-    ...buildResponseAssertions(endpoint, 5),
-    ...(props.length > 0 && buildResponseAssertions(endpoint, 5).length === 0
+    ...responseAssertions,
+    ...(props.length > 0 && responseAssertions.length === 0
       ? [
           `The tester should validate field types for documented properties such as: ${props.join(", ")}.`,
         ]
@@ -429,6 +680,9 @@ export function makeSchemaEnumTemplate(endpoint) {
   const path = endpoint?.path || "/";
   const schema = getResponseSchema(endpoint);
   const enumFields = getSchemaEnumFields(schema);
+  const enumAssertions = buildResponseAssertions(endpoint, 5).filter(
+    (x) => x.includes("documented enum values") || x.includes("allowed values"),
+  );
 
   const tc = baseCase(endpoint, {
     title: `Verify ${method} ${path} returns only documented enum values`,
@@ -443,15 +697,8 @@ export function makeSchemaEnumTemplate(endpoint) {
 
   tc.expected_results = [
     "All enum-based response fields contain only documented values.",
-    ...buildResponseAssertions(endpoint, 5).filter(
-      (x) =>
-        x.includes("documented enum values") || x.includes("allowed values"),
-    ),
-    ...(enumFields.length > 0 &&
-    buildResponseAssertions(endpoint, 5).filter(
-      (x) =>
-        x.includes("documented enum values") || x.includes("allowed values"),
-    ).length === 0
+    ...enumAssertions,
+    ...(enumFields.length > 0 && enumAssertions.length === 0
       ? [`Enum-constrained fields include: ${enumFields.join(", ")}.`]
       : []),
     "No undocumented enum value is returned by the API.",
@@ -471,6 +718,9 @@ export function makeSchemaNestedObjectsTemplate(endpoint) {
   const path = endpoint?.path || "/";
   const schema = getResponseSchema(endpoint);
   const nestedFields = getSchemaNestedObjectFields(schema);
+  const objectAssertions = buildResponseAssertions(endpoint, 5).filter((x) =>
+    x.includes("as an object."),
+  );
 
   const tc = baseCase(endpoint, {
     title: `Verify ${method} ${path} nested objects follow the documented schema`,
@@ -485,13 +735,8 @@ export function makeSchemaNestedObjectsTemplate(endpoint) {
 
   tc.expected_results = [
     "Nested objects follow the documented structure.",
-    ...buildResponseAssertions(endpoint, 5).filter((x) =>
-      x.includes("as an object."),
-    ),
-    ...(nestedFields.length > 0 &&
-    buildResponseAssertions(endpoint, 5).filter((x) =>
-      x.includes("as an object."),
-    ).length === 0
+    ...objectAssertions,
+    ...(nestedFields.length > 0 && objectAssertions.length === 0
       ? [`Nested object fields include: ${nestedFields.join(", ")}.`]
       : []),
     "No nested object contains an unexpected schema structure.",
@@ -511,6 +756,9 @@ export function makeSchemaArrayTemplate(endpoint) {
   const path = endpoint?.path || "/";
   const schema = getResponseSchema(endpoint);
   const arrayFields = getSchemaArrayFields(schema);
+  const arrayAssertions = buildResponseAssertions(endpoint, 5).filter((x) =>
+    x.includes("as an array."),
+  );
 
   const tc = baseCase(endpoint, {
     title: `Verify ${method} ${path} array items follow the documented schema`,
@@ -525,14 +773,9 @@ export function makeSchemaArrayTemplate(endpoint) {
 
   tc.expected_results = [
     "Array fields are returned in the documented structure.",
-    ...buildResponseAssertions(endpoint, 5).filter((x) =>
-      x.includes("as an array."),
-    ),
+    ...arrayAssertions,
     "Array elements follow the documented item schema.",
-    ...(arrayFields.length > 0 &&
-    buildResponseAssertions(endpoint, 5).filter((x) =>
-      x.includes("as an array."),
-    ).length === 0
+    ...(arrayFields.length > 0 && arrayAssertions.length === 0
       ? [`Array-based fields include: ${arrayFields.join(", ")}.`]
       : []),
   ];
@@ -551,6 +794,9 @@ export function makeSchemaFormatTemplate(endpoint) {
   const path = endpoint?.path || "/";
   const schema = getResponseSchema(endpoint);
   const formatFields = getSchemaFormatFields(schema);
+  const formatAssertions = buildResponseAssertions(endpoint, 5).filter((x) =>
+    x.includes("follows"),
+  );
 
   const tc = baseCase(endpoint, {
     title: `Verify ${method} ${path} formatted fields follow the documented schema format`,
@@ -565,13 +811,8 @@ export function makeSchemaFormatTemplate(endpoint) {
 
   tc.expected_results = [
     "Formatted string fields follow the documented format constraints.",
-    ...buildResponseAssertions(endpoint, 5).filter((x) =>
-      x.includes("follows email format."),
-    ),
-    ...(formatFields.length > 0 &&
-    buildResponseAssertions(endpoint, 5).filter((x) =>
-      x.includes("follows email format."),
-    ).length === 0
+    ...formatAssertions,
+    ...(formatFields.length > 0 && formatAssertions.length === 0
       ? [`Fields with documented formats include: ${formatFields.join(", ")}.`]
       : ["Formatted fields match the documented schema format."]),
     "No field violates the documented formatting rules.",
@@ -734,9 +975,13 @@ export function makeSchemaRequestBodyTemplate(endpoint) {
   const requestSchema = getRequestSchema(endpoint);
   const requiredFields = getSchemaRequiredFields(requestSchema);
   const props = getSchemaProperties(requestSchema);
+  const actualBodyFields = getActualRequestBodyFields(endpoint);
 
   const tc = baseCase(endpoint, {
-    title: `Verify ${method} ${path} accepts a request body that matches the documented schema`,
+    title:
+      actualBodyFields.length > 0
+        ? `Verify ${method} ${path} accepts a valid schema-compliant request payload`
+        : `Verify ${method} ${path} accepts a request body that matches the documented schema`,
     objective:
       "Verify that the request body used for the endpoint follows the documented request schema and is accepted by the API.",
     priority: "P1",
@@ -748,25 +993,40 @@ export function makeSchemaRequestBodyTemplate(endpoint) {
   );
 
   tc.expected_results = [
-    "The request body structure matches the documented request schema.",
+    "The provided request body follows the documented request schema for the fields included in this payload.",
     ...requiredFields
       .slice(0, 5)
-      .map((field) => `Required request field '${field}' is included.`),
+      .map(
+        (field) =>
+          `Documented required request field '${field}' is supported when provided.`,
+      ),
     ...buildRequestAssertions(endpoint, 5),
-    ...(requiredFields.length === 0 && props.length > 0
+    ...(actualBodyFields.length > 0
+      ? [
+          `This test payload includes these request fields: ${actualBodyFields.join(", ")}.`,
+        ]
+      : []),
+    ...(requiredFields.length === 0 &&
+    props.length > 0 &&
+    actualBodyFields.length === 0
       ? [`Documented request fields include: ${props.join(", ")}.`]
       : []),
     "The request is accepted by the API when valid schema-compliant data is provided.",
-    "No schema-related validation failure occurs for valid input.",
+    "No schema-related validation failure occurs for the provided valid payload.",
   ];
 
   tc.validation_focus = [
     "Request body schema compliance",
-    "Mandatory request fields",
+    "Provided request payload fields",
     "Request field types",
     "Acceptance of valid payload",
-    ...props.slice(0, 3).map((field) => `Field:${field}`),
+    ...actualBodyFields.slice(0, 3).map((field) => `Field:${field}`),
   ];
+
+  if (actualBodyFields.length > 0) {
+    tc.review_notes =
+      "This case validates the actual fields included in the generated payload, not every documented schema property.";
+  }
 
   return tc;
 }

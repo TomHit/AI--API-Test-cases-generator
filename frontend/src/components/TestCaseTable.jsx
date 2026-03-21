@@ -77,8 +77,15 @@ export default function TestCaseTable({
           {rows.map((r) => {
             const review = reviewBadge(r.needs_review);
             const typeBadge = badgeForType(r.test_type);
+
+            const endpointUrl =
+              r.api_details?.full_url_resolved ||
+              r.api_details?.full_url_template ||
+              r.api_details?.path ||
+              "";
+
             const endpoint =
-              `${r.api_details?.method || ""} ${r.api_details?.path || ""}`.trim();
+              `${r.api_details?.method || ""} ${endpointUrl}`.trim();
 
             return (
               <div
@@ -98,7 +105,9 @@ export default function TestCaseTable({
                   <div style={styles.subtle}>{shortText(r.module, 38)}</div>
                 </div>
 
-                <div style={styles.endpoint}>{shortText(endpoint, 58)}</div>
+                <div style={styles.endpoint} title={endpoint}>
+                  {shortText(endpoint, 88)}
+                </div>
 
                 <div>
                   <span
@@ -165,7 +174,7 @@ const styles = {
 
   tableHead: {
     display: "grid",
-    gridTemplateColumns: "1.05fr 2.2fr 2fr 0.95fr 0.8fr 1fr 0.85fr",
+    gridTemplateColumns: "1fr 2.1fr 2.7fr 0.95fr 0.8fr 1fr 0.85fr",
     gap: 14,
     padding: "14px 16px",
     background: "#f8fafc",
@@ -183,7 +192,7 @@ const styles = {
 
   row: {
     display: "grid",
-    gridTemplateColumns: "1.05fr 2.2fr 2fr 0.95fr 0.8fr 1fr 0.85fr",
+    gridTemplateColumns: "1fr 2.1fr 2.7fr 0.95fr 0.8fr 1fr 0.85fr",
     gap: 14,
     padding: "15px 16px",
     background: "#fff",
@@ -230,6 +239,8 @@ const styles = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    fontFamily:
+      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
   },
 
   priority: {

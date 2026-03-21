@@ -44,9 +44,12 @@ function groupEndpoints(endpoints) {
 }
 
 export default function EndpointSelector({ endpoints, selection, onChange }) {
+  const [visibleCount, setVisibleCount] = useState(150);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+
   const tags = useMemo(() => uniqueTags(endpoints), [endpoints]);
 
-  const filtered = useMemo(() => {
+  const allFiltered = useMemo(() => {
     const q = (selection?.filter?.q || "").toLowerCase().trim();
     const method = selection?.filter?.method || "ALL";
     const authOnly = !!selection?.filter?.authOnly;
@@ -58,34 +61,42 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
 
       const matchQ = !q || haystack.includes(q);
       const matchMethod = method === "ALL" ? true : e.method === method;
-      const matchAuth = authOnly ? !!e.requires_auth : true;
+      const matchAuth = authOnly
+        ? Array.isArray(e.security) && e.security.length > 0
+        : true;
       const matchTag = tag === "ALL" ? true : (e.tags || []).includes(tag);
 
       return matchQ && matchMethod && matchAuth && matchTag;
     });
   }, [endpoints, selection]);
 
+  const filtered = useMemo(() => {
+    return allFiltered.slice(0, visibleCount);
+  }, [allFiltered, visibleCount]);
+
   const grouped = useMemo(() => groupEndpoints(filtered), [filtered]);
 
-  const [collapsedGroups, setCollapsedGroups] = useState({});
-
-  // keep all groups expanded by default like Apidog-style explorer
   useEffect(() => {
-    const next = {};
-    for (const group of grouped) {
-      next[group.tag] = true;
-    }
+    setVisibleCount(150);
+  }, [
+    selection?.filter?.q,
+    selection?.filter?.method,
+    selection?.filter?.tag,
+    selection?.filter?.authOnly,
+  ]);
 
+  useEffect(() => {
     setCollapsedGroups((prev) => {
       const merged = { ...prev };
       for (const group of grouped) {
         if (!(group.tag in merged)) {
-          merged[group.tag] = true;
+          merged[group.tag] = false;
         }
       }
       return merged;
     });
   }, [grouped]);
+
   function toggle(id) {
     const sel = new Set(selection.selected_endpoint_ids || []);
     if (sel.has(id)) sel.delete(id);
@@ -128,13 +139,16 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
     onChange({ ...selection, selected_endpoint_ids: Array.from(sel) });
   }
 
+  const selectedIds = selection.selected_endpoint_ids || [];
+
   return (
     <div style={styles.wrap}>
       <div style={styles.topBar}>
         <div style={styles.topMeta}>
           <div style={styles.treeHeaderTitle}>Endpoints</div>
           <div style={styles.treeHeaderMeta}>
-            {filtered.length} visible / {endpoints.length} total
+            {filtered.length} visible / {allFiltered.length} matched /{" "}
+            {endpoints.length} total
           </div>
         </div>
 
@@ -211,7 +225,7 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
             const isCollapsed = !!collapsedGroups[group.tag];
             const ids = group.items.map((e) => e.id);
             const selectedInGroup = ids.filter((id) =>
-              (selection.selected_endpoint_ids || []).includes(id),
+              selectedIds.includes(id),
             ).length;
             const allSelected =
               group.items.length > 0 && selectedInGroup === group.items.length;
@@ -249,10 +263,10 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
                 {!isCollapsed && (
                   <div style={styles.endpointList}>
                     {group.items.map((e) => {
-                      const checked = (
-                        selection.selected_endpoint_ids || []
-                      ).includes(e.id);
+                      const checked = selectedIds.includes(e.id);
                       const tone = methodTone(e.method);
+                      const hasAuth =
+                        Array.isArray(e.security) && e.security.length > 0;
 
                       return (
                         <label
@@ -283,7 +297,7 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
                               <span style={styles.endpointName}>
                                 {e.summary || e.path}
                               </span>
-                              {e.requires_auth && (
+                              {hasAuth && (
                                 <span style={styles.authBadge}>auth</span>
                               )}
                             </div>
@@ -301,13 +315,30 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
         </div>
       </div>
 
+      {allFiltered.length > visibleCount && (
+        <div style={styles.moreWrap}>
+          <button
+            type="button"
+            style={styles.btn}
+            onClick={() => setVisibleCount((n) => n + 150)}
+          >
+            Show more
+          </button>
+          <span style={styles.moreMeta}>
+            Showing {filtered.length} of {allFiltered.length} matched endpoints
+          </span>
+        </div>
+      )}
+
       <div style={styles.footer}>
         <span>
-          Selected:{" "}
-          <strong>{(selection.selected_endpoint_ids || []).length}</strong>
+          Selected: <strong>{selectedIds.length}</strong>
         </span>
         <span>
           Visible: <strong>{filtered.length}</strong>
+        </span>
+        <span>
+          Matched: <strong>{allFiltered.length}</strong>
         </span>
         <span>
           Total: <strong>{endpoints.length}</strong>
@@ -591,6 +622,19 @@ const styles = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
     lineHeight: 1.05,
+  },
+
+  moreWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+    padding: "2px 2px 0",
+  },
+
+  moreMeta: {
+    fontSize: 11,
+    color: "#64748b",
   },
 
   footer: {

@@ -133,6 +133,26 @@ function prettyJson(value) {
   }
 }
 
+function getEndpointDisplay(apiDetails = {}) {
+  const method = String(apiDetails?.method || "").toUpperCase();
+  const resolved =
+    apiDetails?.full_url_resolved ||
+    apiDetails?.full_url_template ||
+    apiDetails?.path ||
+    "";
+  const template = apiDetails?.full_url_template || apiDetails?.path || "";
+  const baseUrl = apiDetails?.base_url || "";
+  const path = apiDetails?.path || "";
+
+  return {
+    method,
+    resolved,
+    template,
+    baseUrl,
+    path,
+    summary: `${method} ${resolved}`.trim(),
+  };
+}
 export default function GeneratorPage({
   projectId,
   selectedProjectId,
@@ -636,12 +656,14 @@ export default function GeneratorPage({
                                   {row.test_type || "-"}
                                 </td>
                                 <td style={styles.td}>{row.priority || "-"}</td>
-                                <td style={styles.tdApi}>
-                                  {(
-                                    row.api_details?.method || ""
-                                  ).toUpperCase()}{" "}
-                                  {row.api_details?.path || ""}
-                                </td>{" "}
+                                <td
+                                  style={styles.tdApi}
+                                  title={
+                                    getEndpointDisplay(row.api_details).summary
+                                  }
+                                >
+                                  {getEndpointDisplay(row.api_details).summary}
+                                </td>
                                 <td style={{ ...styles.td, width: 100 }}>
                                   <button
                                     type="button"
@@ -716,13 +738,40 @@ export default function GeneratorPage({
                               {selectedCase.module || "-"}
                             </div>
                           </div>
+
                           <div style={styles.previewMiniCard}>
                             <div style={styles.previewMiniLabel}>API</div>
-                            <div style={styles.previewMiniValue}>
-                              {(
-                                selectedCase.api_details?.method || ""
-                              ).toUpperCase()}{" "}
-                              {selectedCase.api_details?.path || ""}
+                            <div style={styles.previewMiniValueMono}>
+                              {
+                                getEndpointDisplay(selectedCase.api_details)
+                                  .summary
+                              }
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={styles.previewSection}>
+                          <div style={styles.previewLabel}>Full Endpoint</div>
+                          <pre style={styles.previewCodeBlockLight}>
+                            {getEndpointDisplay(selectedCase.api_details)
+                              .resolved || "-"}
+                          </pre>
+                        </div>
+
+                        <div style={styles.previewGrid}>
+                          <div style={styles.previewMiniCard}>
+                            <div style={styles.previewMiniLabel}>Base URL</div>
+                            <div style={styles.previewMiniValueMono}>
+                              {getEndpointDisplay(selectedCase.api_details)
+                                .baseUrl || "-"}
+                            </div>
+                          </div>
+
+                          <div style={styles.previewMiniCard}>
+                            <div style={styles.previewMiniLabel}>Path</div>
+                            <div style={styles.previewMiniValueMono}>
+                              {getEndpointDisplay(selectedCase.api_details)
+                                .path || "-"}
                             </div>
                           </div>
                         </div>
@@ -1298,14 +1347,43 @@ const styles = {
     lineHeight: 1.5,
   },
 
+  previewMiniValueMono: {
+    fontSize: 13,
+    color: "#0f172a",
+    fontWeight: 700,
+    lineHeight: 1.6,
+    wordBreak: "break-all",
+    overflowWrap: "anywhere",
+    fontFamily:
+      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  },
+
+  previewCodeBlockLight: {
+    margin: 0,
+    padding: 12,
+    borderRadius: 12,
+    background: "#f8fafc",
+    color: "#0f172a",
+    fontSize: 12,
+    lineHeight: 1.6,
+    overflowX: "auto",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    border: "1px solid #e5e7eb",
+    fontFamily:
+      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  },
+
   tdApi: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#334155",
     padding: "12px 14px",
     borderBottom: "1px solid #eef2f7",
     verticalAlign: "top",
     lineHeight: 1.5,
     wordBreak: "break-word",
+    fontFamily:
+      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
   },
 
   trActive: {

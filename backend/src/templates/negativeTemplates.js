@@ -1,7 +1,80 @@
+function isObject(v) {
+  return v && typeof v === "object" && !Array.isArray(v);
+}
+
 function buildModuleName(endpoint) {
   const tags = Array.isArray(endpoint?.tags) ? endpoint.tags : [];
-  if (tags.length > 0) return `${tags[0]} API`;
+  const firstTag = tags.find((tag) => String(tag || "").trim());
+
+  if (firstTag) return `${String(firstTag).trim()} API`;
   return `${endpoint?.method || "API"} ${endpoint?.path || ""}`.trim();
+}
+
+function getJsonSchemaFromContent(content) {
+  if (!content || typeof content !== "object") return null;
+
+  if (content["application/json"]?.schema) {
+    return content["application/json"].schema;
+  }
+
+  if (content["application/*+json"]?.schema) {
+    return content["application/*+json"].schema;
+  }
+
+  for (const [mediaType, mediaDef] of Object.entries(content)) {
+    if (mediaDef?.schema && mediaType.toLowerCase().includes("json")) {
+      return mediaDef.schema;
+    }
+  }
+
+  for (const mediaDef of Object.values(content)) {
+    if (mediaDef?.schema) return mediaDef.schema;
+  }
+
+  return null;
+}
+
+function getSuccessResponses(endpoint) {
+  const responses = endpoint?.responses || {};
+  return Object.entries(responses)
+    .filter(([code]) => /^2\d\d$/.test(String(code)))
+    .sort(([a], [b]) => Number(a) - Number(b));
+}
+
+function walkSchema(schema, visit, seen = new Set(), path = []) {
+  if (!schema || typeof schema !== "object") return;
+  if (seen.has(schema)) return;
+
+  seen.add(schema);
+  visit(schema, path);
+
+  if (isObject(schema.properties)) {
+    for (const [key, child] of Object.entries(schema.properties)) {
+      walkSchema(child, visit, seen, [...path, key]);
+    }
+  }
+
+  if (schema.items && typeof schema.items === "object") {
+    walkSchema(schema.items, visit, seen, [...path, "[]"]);
+  }
+
+  for (const key of ["oneOf", "anyOf", "allOf"]) {
+    if (Array.isArray(schema[key])) {
+      schema[key].forEach((child, idx) => {
+        walkSchema(child, visit, seen, [...path, `${key}[${idx}]`]);
+      });
+    }
+  }
+
+  if (
+    schema.additionalProperties &&
+    typeof schema.additionalProperties === "object"
+  ) {
+    walkSchema(schema.additionalProperties, visit, seen, [
+      ...path,
+      "additionalProperties",
+    ]);
+  }
 }
 
 function getResolvedValidRequest(endpoint) {
@@ -32,15 +105,18 @@ function buildHeaders(endpoint) {
   return resolved.headers || {};
 }
 
+function buildCookies(endpoint) {
+  const resolved = getResolvedValidRequest(endpoint);
+  return resolved.cookies || {};
+}
+
 function buildRequestBody(endpoint) {
   const resolved = getResolvedValidRequest(endpoint);
   return resolved.request_body !== undefined ? resolved.request_body : null;
 }
 
 function hasRequestBody(endpoint) {
-  const method = String(endpoint?.method || "GET").toUpperCase();
-  if (method === "GET" || method === "DELETE") return false;
-  return buildRequestBody(endpoint) !== null;
+  return !!getRequestSchema(endpoint);
 }
 
 function getRequiredQueryParam(endpoint) {
@@ -60,24 +136,22 @@ function getRequiredPathParam(endpoint) {
 }
 
 function getRequestSchema(endpoint) {
-  return (
-    endpoint?.requestBody?.content?.["application/json"]?.schema ||
-    endpoint?.requestBody?.content?.["application/*+json"]?.schema ||
-    null
-  );
+  const oas3Schema = getJsonSchemaFromContent(endpoint?.requestBody?.content);
+  if (oas3Schema) return oas3Schema;
+
+  const bodyParams = Array.isArray(endpoint?.params?.body)
+    ? endpoint.params.body
+    : [];
+  if (bodyParams[0]?.schema) return bodyParams[0].schema;
+
+  return null;
 }
-
 function getResponseSchema(endpoint) {
-  const responses = endpoint?.responses || {};
-  for (const [code, val] of Object.entries(responses)) {
-    if (!/^2\d\d$/.test(String(code))) continue;
+  for (const [, response] of getSuccessResponses(endpoint)) {
+    const oas3Schema = getJsonSchemaFromContent(response?.content);
+    if (oas3Schema) return oas3Schema;
 
-    const schema =
-      val?.content?.["application/json"]?.schema ||
-      val?.content?.["application/*+json"]?.schema ||
-      null;
-
-    if (schema) return schema;
+    if (response?.schema) return response.schema;
   }
   return null;
 }
@@ -86,6 +160,7 @@ function getFirstQueryParamWithType(endpoint) {
   const query = Array.isArray(endpoint?.params?.query)
     ? endpoint.params.query
     : [];
+
   return (
     query.find((p) => {
       const s = p?.schema || {};
@@ -96,73 +171,146 @@ function getFirstQueryParamWithType(endpoint) {
 
 function getFirstEnumField(endpoint) {
   const schemas = [getRequestSchema(endpoint), getResponseSchema(endpoint)];
+
   for (const schema of schemas) {
-    const props = schema?.properties || {};
-    for (const [name, val] of Object.entries(props)) {
-      if (Array.isArray(val?.enum) && val.enum.length > 0) {
-        return { name, schema: val };
+    let found = null;
+
+    walkSchema(schema, (node, path) => {
+      if (found) return;
+      if (Array.isArray(node?.enum) && node.enum.length > 0) {
+        const fieldName = path[path.length - 1];
+        if (typeof fieldName === "string" && fieldName !== "[]") {
+          found = { name: fieldName, schema: node };
+        }
       }
-    }
+    });
+
+    if (found) return found;
   }
+
   return null;
 }
 
 function getFirstFormatField(endpoint) {
   const schemas = [getRequestSchema(endpoint), getResponseSchema(endpoint)];
+
   for (const schema of schemas) {
-    const props = schema?.properties || {};
-    for (const [name, val] of Object.entries(props)) {
-      if (typeof val?.format === "string") {
-        return { name, schema: val };
+    let found = null;
+
+    walkSchema(schema, (node, path) => {
+      if (found) return;
+      if (typeof node?.format === "string") {
+        const fieldName = path[path.length - 1];
+        if (typeof fieldName === "string" && fieldName !== "[]") {
+          found = { name: fieldName, schema: node };
+        }
       }
-    }
+    });
+
+    if (found) return found;
   }
+
   return null;
 }
 
 function getFirstStringConstraintField(endpoint) {
   const schemas = [getRequestSchema(endpoint), getResponseSchema(endpoint)];
+
   for (const schema of schemas) {
-    const props = schema?.properties || {};
-    for (const [name, val] of Object.entries(props)) {
-      if (val?.minLength !== undefined || val?.maxLength !== undefined) {
-        return { name, schema: val };
+    let found = null;
+
+    walkSchema(schema, (node, path) => {
+      if (found) return;
+      if (node?.minLength !== undefined || node?.maxLength !== undefined) {
+        const fieldName = path[path.length - 1];
+        if (typeof fieldName === "string" && fieldName !== "[]") {
+          found = { name: fieldName, schema: node };
+        }
       }
-    }
+    });
+
+    if (found) return found;
   }
+
   return null;
 }
 
 function getFirstNumericConstraintField(endpoint) {
   const schemas = [getRequestSchema(endpoint), getResponseSchema(endpoint)];
+
   for (const schema of schemas) {
-    const props = schema?.properties || {};
-    for (const [name, val] of Object.entries(props)) {
-      if (val?.minimum !== undefined || val?.maximum !== undefined) {
-        return { name, schema: val };
+    let found = null;
+
+    walkSchema(schema, (node, path) => {
+      if (found) return;
+      if (
+        node?.minimum !== undefined ||
+        node?.maximum !== undefined ||
+        node?.exclusiveMinimum !== undefined ||
+        node?.exclusiveMaximum !== undefined
+      ) {
+        const fieldName = path[path.length - 1];
+        if (typeof fieldName === "string" && fieldName !== "[]") {
+          found = { name: fieldName, schema: node };
+        }
       }
-    }
+    });
+
+    if (found) return found;
   }
+
   return null;
 }
 
 function getFirstPatternField(endpoint) {
   const schemas = [getRequestSchema(endpoint), getResponseSchema(endpoint)];
+
   for (const schema of schemas) {
-    const props = schema?.properties || {};
-    for (const [name, val] of Object.entries(props)) {
-      if (typeof val?.pattern === "string") {
-        return { name, schema: val };
+    let found = null;
+
+    walkSchema(schema, (node, path) => {
+      if (found) return;
+      if (typeof node?.pattern === "string") {
+        const fieldName = path[path.length - 1];
+        if (typeof fieldName === "string" && fieldName !== "[]") {
+          found = { name: fieldName, schema: node };
+        }
       }
-    }
+    });
+
+    if (found) return found;
   }
+
   return null;
+}
+
+function getFirstResolvedNegative(endpoint, bucketName) {
+  const list = endpoint?._resolvedTestData?.negative?.[bucketName];
+  return Array.isArray(list) && list.length > 0 ? list[0] : null;
+}
+
+function applyResolvedNegativeRequest(tc, resolvedNegative) {
+  if (!resolvedNegative?.request) return tc;
+
+  tc.test_data = {
+    path_params: resolvedNegative.request.path_params || {},
+    query_params: resolvedNegative.request.query_params || {},
+    headers: resolvedNegative.request.headers || {},
+    cookies: resolvedNegative.request.cookies || {},
+    request_body:
+      resolvedNegative.request.request_body !== undefined
+        ? resolvedNegative.request.request_body
+        : null,
+  };
+
+  return tc;
 }
 
 function baseNegativeCase(endpoint, { title, objective, priority = "high" }) {
   const method = String(endpoint?.method || "GET").toUpperCase();
   const path = endpoint?.path || "/";
   const moduleName = buildModuleName(endpoint);
+  const resolved = getResolvedValidRequest(endpoint);
 
   return {
     id: "",
@@ -177,13 +325,11 @@ function baseNegativeCase(endpoint, { title, objective, priority = "high" }) {
       "Any required authentication or access credentials are available if applicable.",
     ],
     test_data: {
-      path_params: buildPathParams(endpoint),
-      query_params: buildQueryParams(endpoint),
-      headers: buildHeaders(endpoint),
-      cookies: getResolvedValidRequest(endpoint).cookies || {},
-      request_body: hasRequestBody(endpoint)
-        ? buildRequestBody(endpoint)
-        : null,
+      path_params: resolved.path_params || {},
+      query_params: resolved.query_params || {},
+      headers: resolved.headers || {},
+      cookies: resolved.cookies || {},
+      request_body: hasRequestBody(endpoint) ? resolved.request_body : null,
     },
     steps: [
       "Open an API client such as Postman or any approved API testing tool.",
@@ -215,11 +361,18 @@ export function makeNegativeMissingRequiredQueryTemplate(endpoint) {
     priority: "high",
   });
 
-  const validQuery = { ...(buildQueryParams(endpoint) || {}) };
-  delete validQuery[missingParamName];
-
-  tc.test_data.query_params = validQuery;
-  tc.test_data.request_body = null;
+  const resolvedNegative = getFirstResolvedNegative(
+    endpoint,
+    "missingRequired",
+  );
+  if (resolvedNegative?.location === "query") {
+    applyResolvedNegativeRequest(tc, resolvedNegative);
+  } else {
+    const validQuery = { ...(buildQueryParams(endpoint) || {}) };
+    delete validQuery[missingParamName];
+    tc.test_data.query_params = validQuery;
+    tc.test_data.request_body = null;
+  }
 
   tc.steps.push(
     `Add all normally required query parameters except '${missingParamName}'.`,
@@ -261,6 +414,19 @@ export function makeNegativeMissingRequiredPathTemplate(endpoint) {
       "Verify that the API rejects or fails safely when a required path parameter is omitted or malformed.",
     priority: "high",
   });
+
+  const resolvedNegative = getFirstResolvedNegative(
+    endpoint,
+    "missingRequired",
+  );
+  if (resolvedNegative?.location === "path") {
+    applyResolvedNegativeRequest(tc, resolvedNegative);
+  } else {
+    tc.test_data.path_params = {
+      ...(buildPathParams(endpoint) || {}),
+      [missingParamName]: "",
+    };
+  }
 
   tc.steps.push(
     `Prepare the endpoint request without a valid value for path parameter '${missingParamName}'.`,
@@ -435,15 +601,23 @@ export function makeNegativeEmptyBodyTemplate(endpoint) {
     priority: "high",
   });
 
-  tc.test_data.headers = {
-    ...(tc.test_data.headers || {}),
-    "Content-Type": "application/json",
-  };
-  tc.test_data.request_body = {};
+  const resolvedNegative = getFirstResolvedNegative(
+    endpoint,
+    "missingRequired",
+  );
+  if (resolvedNegative?.location === "body") {
+    applyResolvedNegativeRequest(tc, resolvedNegative);
+  } else {
+    tc.test_data.headers = {
+      ...(tc.test_data.headers || {}),
+      "Content-Type": "application/json",
+    };
+    tc.test_data.request_body = null;
+  }
 
   tc.steps.push(
     "Set the Content-Type header to application/json.",
-    "Send the request with an empty body or an empty JSON object.",
+    "Send the request with an empty or missing request body.",
     "Observe the API response.",
   );
 
@@ -522,11 +696,16 @@ export function makeNegativeInvalidQueryTypeTemplate(endpoint) {
     priority: "medium",
   });
 
-  tc.test_data.query_params = {
-    ...(buildQueryParams(endpoint) || {}),
-    [fieldName]: "invalid-type-value",
-  };
-  tc.test_data.request_body = null;
+  const resolvedNegative = getFirstResolvedNegative(endpoint, "invalidType");
+  if (resolvedNegative?.location === "query") {
+    applyResolvedNegativeRequest(tc, resolvedNegative);
+  } else {
+    tc.test_data.query_params = {
+      ...(buildQueryParams(endpoint) || {}),
+      [fieldName]: "invalid-type-value",
+    };
+    tc.test_data.request_body = null;
+  }
 
   tc.steps.push(
     `Set query parameter '${fieldName}' to a value that does not match its documented type.`,
@@ -571,10 +750,15 @@ export function makeNegativeInvalidEnumTemplate(endpoint) {
     priority: "high",
   });
 
-  tc.test_data.request_body = {
-    ...(tc.test_data.request_body || {}),
-    [fieldName]: "__INVALID_ENUM__",
-  };
+  const resolvedNegative = getFirstResolvedNegative(endpoint, "invalidEnum");
+  if (resolvedNegative) {
+    applyResolvedNegativeRequest(tc, resolvedNegative);
+  } else {
+    tc.test_data.request_body = {
+      ...(tc.test_data.request_body || {}),
+      [fieldName]: "__INVALID_ENUM__",
+    };
+  }
 
   tc.steps.push(
     allowed.length > 0
@@ -616,19 +800,24 @@ export function makeNegativeInvalidFormatTemplate(endpoint) {
     priority: "high",
   });
 
-  tc.test_data.request_body = {
-    ...(buildRequestBody(endpoint) || {}),
-    [fieldName]:
-      formatName === "email"
-        ? "not-an-email"
-        : formatName === "uuid"
-          ? "not-a-uuid"
-          : formatName === "date"
-            ? "99-99-9999"
-            : formatName === "date-time"
-              ? "not-a-datetime"
-              : "invalid-format",
-  };
+  const resolvedNegative = getFirstResolvedNegative(endpoint, "invalidFormat");
+  if (resolvedNegative) {
+    applyResolvedNegativeRequest(tc, resolvedNegative);
+  } else {
+    tc.test_data.request_body = {
+      ...(buildRequestBody(endpoint) || {}),
+      [fieldName]:
+        formatName === "email"
+          ? "not-an-email"
+          : formatName === "uuid"
+            ? "not-a-uuid"
+            : formatName === "date"
+              ? "99-99-9999"
+              : formatName === "date-time"
+                ? "not-a-datetime"
+                : "invalid-format",
+    };
+  }
 
   tc.steps.push(
     `Set '${fieldName}' to a value that does not match the documented ${formatName} format.`,
@@ -671,11 +860,16 @@ export function makeNegativeStringTooLongTemplate(endpoint) {
     priority: "high",
   });
 
-  tc.test_data.request_body = {
-    ...(tc.test_data.request_body || {}),
-    [fieldName]:
-      typeof maxLen === "number" ? "X".repeat(maxLen + 1) : "X".repeat(300),
-  };
+  const resolvedNegative = getFirstResolvedNegative(endpoint, "stringTooLong");
+  if (resolvedNegative) {
+    applyResolvedNegativeRequest(tc, resolvedNegative);
+  } else {
+    tc.test_data.request_body = {
+      ...(tc.test_data.request_body || {}),
+      [fieldName]:
+        typeof maxLen === "number" ? "X".repeat(maxLen + 1) : "X".repeat(300),
+    };
+  }
 
   tc.steps.push(
     typeof maxLen === "number"
@@ -722,10 +916,18 @@ export function makeNegativeNumericAboveMaximumTemplate(endpoint) {
     priority: "high",
   });
 
-  tc.test_data.request_body = {
-    ...(tc.test_data.request_body || {}),
-    [fieldName]: typeof maxVal === "number" ? maxVal + 1 : 999999999,
-  };
+  const resolvedNegative = getFirstResolvedNegative(
+    endpoint,
+    "numericAboveMaximum",
+  );
+  if (resolvedNegative) {
+    applyResolvedNegativeRequest(tc, resolvedNegative);
+  } else {
+    tc.test_data.request_body = {
+      ...(tc.test_data.request_body || {}),
+      [fieldName]: typeof maxVal === "number" ? maxVal + 1 : 999999999,
+    };
+  }
 
   tc.steps.push(
     typeof maxVal === "number"
@@ -918,7 +1120,12 @@ export function makeNegativeNullRequiredFieldTemplate(endpoint) {
     endpoint?._resolvedTestData?.valid?.body ||
     buildRequestBody(endpoint) ||
     {};
-  const firstKey = Object.keys(body)[0] || "required_field";
+  const resolvedNullCase = getFirstResolvedNegative(
+    endpoint,
+    "nullRequiredField",
+  );
+  const firstKey =
+    resolvedNullCase?.field || Object.keys(body)[0] || "required_field";
 
   const tc = baseNegativeCase(endpoint, {
     title: `Verify ${method} ${path} rejects null for required fields`,
@@ -927,10 +1134,14 @@ export function makeNegativeNullRequiredFieldTemplate(endpoint) {
     priority: "high",
   });
 
-  tc.test_data.request_body = {
-    ...body,
-    [firstKey]: null,
-  };
+  if (resolvedNullCase) {
+    applyResolvedNegativeRequest(tc, resolvedNullCase);
+  } else {
+    tc.test_data.request_body = {
+      ...body,
+      [firstKey]: null,
+    };
+  }
 
   tc.steps.push(
     `Set required field '${firstKey}' to null.`,

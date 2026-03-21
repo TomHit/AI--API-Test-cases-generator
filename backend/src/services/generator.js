@@ -20,17 +20,21 @@ function nowIso() {
   return new Date().toISOString();
 }
 function normalizePriority(priority) {
-  const p = String(priority || "").toUpperCase();
+  const p = String(priority || "")
+    .toUpperCase()
+    .trim();
 
-  if (p === "P0") return "critical";
-  if (p === "P1") return "high";
-  if (p === "P2") return "medium";
-  if (p === "P3") return "low";
+  if (["P0", "P1", "P2", "P3"].includes(p)) return p;
 
-  const low = String(priority || "").toLowerCase();
-  if (["low", "medium", "high", "critical"].includes(low)) return low;
+  const low = String(priority || "")
+    .toLowerCase()
+    .trim();
+  if (low === "critical") return "P0";
+  if (low === "high") return "P1";
+  if (low === "medium") return "P2";
+  if (low === "low") return "P3";
 
-  return "medium";
+  return "P2";
 }
 
 function normalizeTestData(testData = {}) {
@@ -73,6 +77,70 @@ function tryExtractJsonObject(text) {
 
 function endpointKey(method, path) {
   return `${String(method || "GET").toUpperCase()} ${String(path || "")}`;
+}
+
+function trimTrailingSlash(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+function trimLeadingSlash(value) {
+  return String(value || "").replace(/^\/+/, "");
+}
+
+function joinUrlParts(base, path) {
+  const b = trimTrailingSlash(base);
+  const p = trimLeadingSlash(path);
+  if (!b) return path || "/";
+  if (!p) return b || "/";
+  return `${b}/${p}`;
+}
+
+function buildBaseUrlFromEndpoint(endpoint) {
+  const serverUrl =
+    Array.isArray(endpoint?.servers) && endpoint.servers.length > 0
+      ? endpoint.servers[0]?.url
+      : "";
+
+  if (serverUrl) return trimTrailingSlash(serverUrl);
+
+  const scheme =
+    Array.isArray(endpoint?.schemes) && endpoint.schemes.length > 0
+      ? endpoint.schemes[0]
+      : "https";
+
+  const host = String(endpoint?.host || "").trim();
+  const basePath = String(endpoint?.basePath || "").trim();
+
+  if (host) return trimTrailingSlash(`${scheme}://${host}${basePath}`);
+  return trimTrailingSlash(basePath);
+}
+
+function buildApiDetails(
+  endpoint,
+  existingApiDetails = {},
+  fallbackBaseUrl = "",
+) {
+  const method = String(
+    existingApiDetails?.method || endpoint?.method || "GET",
+  ).toUpperCase();
+
+  const path = existingApiDetails?.path || endpoint?.path || "/";
+
+  const baseUrl =
+    existingApiDetails?.base_url ||
+    buildBaseUrlFromEndpoint(endpoint) ||
+    trimTrailingSlash(fallbackBaseUrl || "");
+
+  return {
+    ...existingApiDetails,
+    method,
+    path,
+    base_url: baseUrl || "",
+    full_url_template:
+      existingApiDetails?.full_url_template || joinUrlParts(baseUrl, path),
+    full_url_resolved:
+      existingApiDetails?.full_url_resolved || joinUrlParts(baseUrl, path),
+  };
 }
 
 function buildEndpointMap(endpoints) {
@@ -414,7 +482,7 @@ function summarizePartialQuality(quality) {
     (r) => r.status === "partial",
   );
 }
-function enrichSuitesWithCaseIds(plan, allEndpoints) {
+function enrichSuitesWithCaseIds(plan, allEndpoints, fallbackBaseUrl = "") {
   if (!plan || !Array.isArray(plan.suites)) return plan;
 
   const endpointMap = buildEndpointMap(allEndpoints);
@@ -456,12 +524,11 @@ function enrichSuitesWithCaseIds(plan, allEndpoints) {
           (Array.isArray(endpoint?.tags) && endpoint.tags.length > 0
             ? endpoint.tags[0]
             : endpoint?.path?.split("/").filter(Boolean)[0] || "Default"),
-        api_details: {
-          method: String(
-            rest?.api_details?.method || endpoint?.method || "GET",
-          ).toUpperCase(),
-          path: rest?.api_details?.path || endpoint?.path || "/",
-        },
+        api_details: buildApiDetails(
+          endpoint,
+          rest?.api_details,
+          fallbackBaseUrl,
+        ),
         preconditions: ensureArray(rest?.preconditions),
         steps: ensureArray(rest?.steps),
         expected_results: ensureArray(rest?.expected_results),
@@ -484,6 +551,7 @@ async function buildDeterministicTestPlan({
   options,
   endpoints,
   caseIdGen,
+  fallbackBaseUrl = "",
 }) {
   const endpointRefs = endpoints.map((e) => ({
     method: String(e.method).toUpperCase(),
@@ -545,12 +613,11 @@ async function buildDeterministicTestPlan({
           (Array.isArray(endpoint?.tags) && endpoint.tags.length > 0
             ? endpoint.tags[0]
             : endpoint?.path?.split("/").filter(Boolean)[0] || "Default"),
-        api_details: {
-          method: String(
-            rest?.api_details?.method || endpoint?.method || "GET",
-          ).toUpperCase(),
-          path: rest?.api_details?.path || endpoint?.path || "/",
-        },
+        api_details: buildApiDetails(
+          endpoint,
+          rest?.api_details,
+          fallbackBaseUrl,
+        ),
         preconditions: ensureArray(rest?.preconditions),
         steps: ensureArray(rest?.steps),
         expected_results: ensureArray(rest?.expected_results),
@@ -715,7 +782,8 @@ export async function generateTestPlan(payload) {
     "SELECTED PAYLOAD ENDPOINTS:",
     selected.map((e) => `${String(e.method).toUpperCase()} ${e.path}`),
   );
-
+  const fallbackBaseUrl =
+    cfg?.base_url || cfg?.baseUrl || payload?.base_url || "";
   const projectBlock = {
     project_id: cfg.project_id || project_id,
     project_name: cfg.project_name || project_id,
@@ -746,6 +814,7 @@ export async function generateTestPlan(payload) {
     options,
     endpoints: eligibleEndpointRecords,
     caseIdGen,
+    fallbackBaseUrl,
   });
 
   // ------------------------------
@@ -819,7 +888,7 @@ export async function generateTestPlan(payload) {
     ? obj.project.auth_vars
     : projectBlock.auth_vars;
 
-  obj = enrichSuitesWithCaseIds(obj, allEndpoints);
+  obj = enrichSuitesWithCaseIds(obj, allEndpoints, fallbackBaseUrl);
   obj = applyResponseAwareCaseNormalization(obj, allEndpoints);
   obj = filterGeneratedPlanToEligibleEndpoints(obj, eligibleEndpointRecords);
 

@@ -12,6 +12,7 @@ const ajv = new Ajv2020({
 addFormats(ajv);
 
 let validateFn = null;
+let validatorPromise = null;
 
 async function loadJson(filePath) {
   let raw;
@@ -32,25 +33,42 @@ async function loadJson(filePath) {
   }
 }
 
+export function clearValidatorCache() {
+  validateFn = null;
+  validatorPromise = null;
+}
+
 export async function getValidator() {
   if (validateFn) return validateFn;
+  if (validatorPromise) return validatorPromise;
 
-  const schemaDir = path.join(process.cwd(), "src", "schema");
+  validatorPromise = (async () => {
+    const schemaDir = path.join(process.cwd(), "src", "schema");
 
-  const testCaseSchemaPath = path.join(schemaDir, "test_case.schema.json");
-  const testPlanSchemaPath = path.join(schemaDir, "test_plan.schema.json");
+    const testCaseSchemaPath = path.join(schemaDir, "test_case.schema.json");
+    const testPlanSchemaPath = path.join(schemaDir, "test_plan.schema.json");
 
-  const testCaseSchema = await loadJson(testCaseSchemaPath);
-  const testPlanSchema = await loadJson(testPlanSchemaPath);
+    const testCaseSchema = await loadJson(testCaseSchemaPath);
+    const testPlanSchema = await loadJson(testPlanSchemaPath);
 
-  ajv.addSchema(
-    testCaseSchema,
-    testCaseSchema.$id || "./test_case.schema.json",
-  );
-  ajv.addSchema(testCaseSchema, "./test_case.schema.json");
+    ajv.removeSchema(testCaseSchema.$id || "./test_case.schema.json");
+    ajv.removeSchema("./test_case.schema.json");
 
-  validateFn = ajv.compile(testPlanSchema);
-  return validateFn;
+    ajv.addSchema(
+      testCaseSchema,
+      testCaseSchema.$id || "./test_case.schema.json",
+    );
+    ajv.addSchema(testCaseSchema, "./test_case.schema.json");
+
+    validateFn = ajv.compile(testPlanSchema);
+    return validateFn;
+  })();
+
+  try {
+    return await validatorPromise;
+  } finally {
+    validatorPromise = null;
+  }
 }
 
 export async function validateTestPlanOrThrow(obj) {
@@ -66,10 +84,11 @@ export async function validateTestPlanOrThrow(obj) {
       schemaPath: e.schemaPath,
     }));
 
-    console.log("AJV ERRORS:", JSON.stringify(errors, null, 2));
-
     const err = new Error("Schema validation failed");
-    err.details = { errors };
+    err.details = {
+      schema: "test_plan.schema.json",
+      errors,
+    };
     throw err;
   }
 

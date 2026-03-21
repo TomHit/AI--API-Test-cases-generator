@@ -1,28 +1,45 @@
-function getResponseSchema(endpoint) {
-  if (endpoint?.responses && typeof endpoint.responses === "object") {
-    for (const [code, val] of Object.entries(endpoint.responses)) {
-      if (!/^2\d\d$/.test(String(code))) continue;
+function getJsonSchemaFromContent(content) {
+  if (!content || typeof content !== "object") return null;
 
-      const content = val?.content || {};
-      const schema =
-        content["application/json"]?.schema ||
-        content["application/*+json"]?.schema ||
-        null;
+  if (content["application/json"]?.schema) {
+    return content["application/json"].schema;
+  }
 
-      if (schema) return schema;
+  if (content["application/*+json"]?.schema) {
+    return content["application/*+json"].schema;
+  }
+
+  for (const [mediaType, mediaDef] of Object.entries(content)) {
+    if (mediaDef?.schema && mediaType.toLowerCase().includes("json")) {
+      return mediaDef.schema;
     }
+  }
+
+  for (const mediaDef of Object.values(content)) {
+    if (mediaDef?.schema) return mediaDef.schema;
+  }
+
+  return null;
+}
+
+function getSuccessResponses(endpoint) {
+  const responses = endpoint?.responses || {};
+  return Object.entries(responses)
+    .filter(([code]) => /^2\d\d$/.test(String(code)))
+    .sort(([a], [b]) => Number(a) - Number(b));
+}
+
+function getResponseSchema(endpoint) {
+  for (const [, val] of getSuccessResponses(endpoint)) {
+    const schema = getJsonSchemaFromContent(val?.content);
+    if (schema) return schema;
   }
 
   return null;
 }
 
 function getRequestSchema(endpoint) {
-  const content = endpoint?.requestBody?.content || {};
-  return (
-    content["application/json"]?.schema ||
-    content["application/*+json"]?.schema ||
-    null
-  );
+  return getJsonSchemaFromContent(endpoint?.requestBody?.content);
 }
 
 function getSchemaProperties(schema) {
@@ -31,33 +48,69 @@ function getSchemaProperties(schema) {
     : {};
 }
 
+function walkSchema(schema, visit, seen = new Set()) {
+  if (!schema || typeof schema !== "object") return;
+  if (seen.has(schema)) return;
+
+  seen.add(schema);
+  visit(schema);
+
+  if (schema.properties && typeof schema.properties === "object") {
+    for (const child of Object.values(schema.properties)) {
+      walkSchema(child, visit, seen);
+    }
+  }
+
+  if (schema.items && typeof schema.items === "object") {
+    walkSchema(schema.items, visit, seen);
+  }
+
+  for (const key of ["oneOf", "anyOf", "allOf"]) {
+    if (Array.isArray(schema[key])) {
+      for (const child of schema[key]) {
+        walkSchema(child, visit, seen);
+      }
+    }
+  }
+
+  if (
+    schema.additionalProperties &&
+    typeof schema.additionalProperties === "object"
+  ) {
+    walkSchema(schema.additionalProperties, visit, seen);
+  }
+}
+
+function schemaSome(schema, predicate) {
+  let found = false;
+
+  walkSchema(schema, (node) => {
+    if (!found && predicate(node)) {
+      found = true;
+    }
+  });
+
+  return found;
+}
+
 /**
- * Rule: endpoint has a response schema
+ * Legacy compatibility helper.
+ * Prefer endpointProfiler.hasResponseSchema in new code.
  */
 export function shouldGenerateSchemaResponse(endpoint) {
   if (endpoint?.responses && typeof endpoint.responses === "object") {
-    for (const [code, val] of Object.entries(endpoint.responses)) {
-      if (!/^2\d\d$/.test(String(code))) continue;
-
-      const content = val?.content || {};
-      const appJson =
-        content["application/json"] || content["application/*+json"];
-
-      if (appJson?.schema) return true;
-    }
+    return !!getResponseSchema(endpoint);
   }
 
   return !!endpoint?.response?.schemaSummary;
 }
 
 /**
- * Rule: endpoint has a request body schema
+ * Legacy compatibility helper.
+ * Prefer endpointProfiler.hasRequestBody in new code.
  */
 export function shouldGenerateSchemaRequestBody(endpoint) {
-  const content = endpoint?.requestBody?.content || {};
-  return !!(
-    content["application/json"]?.schema || content["application/*+json"]?.schema
-  );
+  return !!getRequestSchema(endpoint);
 }
 
 export function shouldGenerateSchemaRequiredFields(endpoint) {
@@ -67,81 +120,82 @@ export function shouldGenerateSchemaRequiredFields(endpoint) {
 
 export function shouldGenerateSchemaTypedFields(endpoint) {
   const schema = getResponseSchema(endpoint);
-  const props = getSchemaProperties(schema);
-
-  return Object.values(props).some(
-    (v) => !!v?.type || !!v?.format || !!v?.items || !!v?.properties,
+  return schemaSome(
+    schema,
+    (node) =>
+      !!node?.type || !!node?.format || !!node?.items || !!node?.properties,
   );
 }
 
 export function shouldGenerateSchemaEnum(endpoint) {
   const schema = getResponseSchema(endpoint);
-  const props = getSchemaProperties(schema);
-
-  return Object.values(props).some(
-    (v) => Array.isArray(v?.enum) && v.enum.length > 0,
+  return schemaSome(
+    schema,
+    (node) => Array.isArray(node?.enum) && node.enum.length > 0,
   );
 }
 
 export function shouldGenerateSchemaNestedObjects(endpoint) {
   const schema = getResponseSchema(endpoint);
-  const props = getSchemaProperties(schema);
 
-  return Object.values(props).some(
-    (v) => v?.type === "object" || !!v?.properties,
-  );
+  let objectCount = 0;
+  walkSchema(schema, (node) => {
+    if (node?.type === "object" || !!node?.properties) {
+      objectCount += 1;
+    }
+  });
+
+  return objectCount > 1;
 }
 
 export function shouldGenerateSchemaArray(endpoint) {
   const schema = getResponseSchema(endpoint);
-  const props = getSchemaProperties(schema);
-
-  return Object.values(props).some((v) => v?.type === "array" || !!v?.items);
+  return schemaSome(schema, (node) => node?.type === "array" || !!node?.items);
 }
 
 export function shouldGenerateSchemaFormat(endpoint) {
   const schema = getResponseSchema(endpoint);
-  const props = getSchemaProperties(schema);
-
-  return Object.values(props).some((v) => typeof v?.format === "string");
+  return schemaSome(schema, (node) => typeof node?.format === "string");
 }
 
 export function shouldGenerateSchemaNumericConstraints(endpoint) {
   const schema = getResponseSchema(endpoint);
-  const props = getSchemaProperties(schema);
-
-  return Object.values(props).some(
-    (v) => v?.minimum !== undefined || v?.maximum !== undefined,
+  return schemaSome(
+    schema,
+    (node) =>
+      node?.minimum !== undefined ||
+      node?.maximum !== undefined ||
+      node?.exclusiveMinimum !== undefined ||
+      node?.exclusiveMaximum !== undefined,
   );
 }
 
 export function shouldGenerateSchemaStringConstraints(endpoint) {
   const schema = getResponseSchema(endpoint);
-  const props = getSchemaProperties(schema);
-
-  return Object.values(props).some(
-    (v) => v?.minLength !== undefined || v?.maxLength !== undefined,
+  return schemaSome(
+    schema,
+    (node) => node?.minLength !== undefined || node?.maxLength !== undefined,
   );
 }
 
 export function shouldGenerateSchemaPattern(endpoint) {
   const schema = getResponseSchema(endpoint);
-  const props = getSchemaProperties(schema);
-
-  return Object.values(props).some((v) => typeof v?.pattern === "string");
+  return schemaSome(schema, (node) => typeof node?.pattern === "string");
 }
 
 export function shouldGenerateSchemaComposition(endpoint) {
   const responseSchema = getResponseSchema(endpoint);
   const requestSchema = getRequestSchema(endpoint);
 
-  return !!(
-    responseSchema?.oneOf ||
-    responseSchema?.anyOf ||
-    responseSchema?.allOf ||
-    requestSchema?.oneOf ||
-    requestSchema?.anyOf ||
-    requestSchema?.allOf
+  return (
+    schemaSome(
+      responseSchema,
+      (node) => !!node?.oneOf || !!node?.anyOf || !!node?.allOf,
+    ) ||
+    schemaSome(
+      requestSchema,
+      (node) => !!node?.oneOf || !!node?.anyOf || !!node?.allOf,
+    )
   );
 }
 

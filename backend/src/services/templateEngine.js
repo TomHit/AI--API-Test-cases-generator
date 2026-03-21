@@ -1,7 +1,7 @@
 import { TEMPLATE_REGISTRY } from "./templateRegistry.js";
 import { resolveEndpointTestData } from "./testDataResolver.js";
 import { generateNegativeCases } from "./negativeCaseGenerator.js";
-import { evaluateRules } from "./evaluateRules.js";
+import { evaluateRules } from "../engine/evaluateRules.js";
 
 /* ------------------ BASIC HELPERS ------------------ */
 
@@ -284,6 +284,103 @@ function sanitizePositiveTestData(endpoint, testData = {}) {
   };
 
   return alignDeviceValues(cleaned);
+}
+
+function trimTrailingSlash(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+function trimLeadingSlash(value) {
+  return String(value || "").replace(/^\/+/, "");
+}
+
+function joinUrlParts(base, path) {
+  const b = trimTrailingSlash(base);
+  const p = trimLeadingSlash(path);
+  if (!b) return path || "/";
+  if (!p) return b || "/";
+  return `${b}/${p}`;
+}
+
+function buildBaseUrl(endpoint) {
+  const serverUrl =
+    Array.isArray(endpoint?.servers) && endpoint.servers.length > 0
+      ? endpoint.servers[0]?.url
+      : "";
+
+  if (serverUrl) {
+    return trimTrailingSlash(serverUrl);
+  }
+
+  const scheme =
+    Array.isArray(endpoint?.schemes) && endpoint.schemes.length > 0
+      ? endpoint.schemes[0]
+      : "https";
+
+  const host = String(endpoint?.host || "").trim();
+  const basePath = String(endpoint?.basePath || "").trim();
+
+  if (host) {
+    return trimTrailingSlash(`${scheme}://${host}${basePath}`);
+  }
+
+  return trimTrailingSlash(basePath);
+}
+
+function resolvePathTemplate(path, pathParams = {}) {
+  let out = String(path || "/");
+
+  for (const [key, value] of Object.entries(pathParams || {})) {
+    out = out.replaceAll(`{${key}}`, encodeURIComponent(String(value)));
+  }
+
+  return out;
+}
+
+function buildQueryString(queryParams = {}) {
+  const pairs = [];
+
+  for (const [key, value] of Object.entries(queryParams || {})) {
+    if (value === undefined || value === null || value === "") continue;
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        pairs.push(
+          `${encodeURIComponent(key)}=${encodeURIComponent(String(item))}`,
+        );
+      }
+      continue;
+    }
+
+    if (typeof value === "object") {
+      pairs.push(
+        `${encodeURIComponent(key)}=${encodeURIComponent(JSON.stringify(value))}`,
+      );
+      continue;
+    }
+
+    pairs.push(
+      `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`,
+    );
+  }
+
+  return pairs.length > 0 ? `?${pairs.join("&")}` : "";
+}
+
+function buildEndpointUrls(endpoint, testData = {}, apiPath = "/") {
+  const baseUrl = buildBaseUrl(endpoint);
+  const rawPath = String(apiPath || endpoint?.path || "/");
+  const resolvedPath = resolvePathTemplate(
+    rawPath,
+    testData?.path_params || {},
+  );
+  const queryString = buildQueryString(testData?.query_params || {});
+
+  return {
+    base_url: baseUrl,
+    full_url_template: joinUrlParts(baseUrl, rawPath),
+    full_url_resolved: `${joinUrlParts(baseUrl, resolvedPath)}${queryString}`,
+  };
 }
 
 /* ------------------ TEMPLATE HANDLING ------------------ */
@@ -761,7 +858,8 @@ function annotateCase(tc, rule, endpoint) {
     headers: mergeObjects(resolvedData?.headers, tc?.test_data?.headers),
     cookies: mergeObjects(resolvedData?.cookies, tc?.test_data?.cookies),
     request_body:
-      tc?.test_data?.request_body !== undefined
+      tc?.test_data?.request_body !== undefined &&
+      tc?.test_data?.request_body !== null
         ? tc.test_data.request_body
         : resolvedData?.request_body,
   };
@@ -769,6 +867,19 @@ function annotateCase(tc, rule, endpoint) {
   tc.test_data = isPositiveTemplateKey(templateKey)
     ? sanitizePositiveTestData(endpoint, mergedTestData)
     : mergedTestData;
+
+  const urls = buildEndpointUrls(
+    endpoint,
+    tc.test_data,
+    tc?.api_details?.path || endpoint?.path || "/",
+  );
+
+  tc.api_details = {
+    ...tc.api_details,
+    base_url: urls.base_url,
+    full_url_template: urls.full_url_template,
+    full_url_resolved: urls.full_url_resolved,
+  };
 
   return tc;
 }

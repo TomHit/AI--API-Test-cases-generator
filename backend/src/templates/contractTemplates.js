@@ -1,16 +1,18 @@
-import { generateObjectFromSchema } from "../utils/testDataGenerator.js";
-
 function buildModuleName(endpoint) {
   const tags = Array.isArray(endpoint?.tags) ? endpoint.tags : [];
-  if (tags.length > 0) return `${tags[0]} API`;
+  const firstTag = tags.find((tag) => String(tag || "").trim());
+
+  if (firstTag) return `${String(firstTag).trim()} API`;
   return `${endpoint?.method || "API"} ${endpoint?.path || ""}`.trim();
 }
 
 function prettyValue(value) {
   if (value === null || value === undefined) return "null";
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean")
+  if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
+  }
+
   try {
     return JSON.stringify(value);
   } catch {
@@ -18,21 +20,69 @@ function prettyValue(value) {
   }
 }
 
-function buildRequestUrlLabel(path) {
+function prettyJsonInline(value) {
+  if (value === null || value === undefined) return "null";
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function buildRequestUrlLabel(endpoint, path) {
+  const fullResolved = endpoint?.api_details?.full_url_resolved;
+  const fullTemplate = endpoint?.api_details?.full_url_template;
+
+  if (fullResolved) return fullResolved;
+  if (fullTemplate) return fullTemplate;
+
   return `{base_url}${path || "/"}`;
 }
 
+function getJsonSchemaFromContent(content) {
+  if (!content || typeof content !== "object") return null;
+
+  if (content["application/json"]?.schema) {
+    return content["application/json"].schema;
+  }
+
+  if (content["application/*+json"]?.schema) {
+    return content["application/*+json"].schema;
+  }
+
+  for (const [mediaType, mediaDef] of Object.entries(content)) {
+    if (mediaDef?.schema && mediaType.toLowerCase().includes("json")) {
+      return mediaDef.schema;
+    }
+  }
+
+  for (const mediaDef of Object.values(content)) {
+    if (mediaDef?.schema) return mediaDef.schema;
+  }
+
+  return null;
+}
+
+function getSuccessResponses(endpoint) {
+  const responses = endpoint?.responses || {};
+  return Object.entries(responses)
+    .filter(([code]) => /^2\d\d$/.test(String(code)))
+    .sort(([a], [b]) => Number(a) - Number(b));
+}
+
 function buildExecutionSteps(
+  endpoint,
   method,
   path,
   testData = {},
   { includeResponseReview = false } = {},
 ) {
   const steps = [];
-  const url = buildRequestUrlLabel(path);
+  const url = buildRequestUrlLabel(endpoint, path);
 
   steps.push(
-    `Open an API client such as Postman or any approved API testing tool.`,
+    "Open an API client such as Postman or any approved API testing tool.",
   );
   steps.push(`Select the ${method} method.`);
   steps.push(`Enter the request URL: ${url}.`);
@@ -40,6 +90,7 @@ function buildExecutionSteps(
   const pathParams = testData?.path_params || {};
   const queryParams = testData?.query_params || {};
   const headers = testData?.headers || {};
+  const cookies = testData?.cookies || {};
   const requestBody = testData?.request_body;
 
   for (const [key, value] of Object.entries(pathParams)) {
@@ -54,21 +105,214 @@ function buildExecutionSteps(
     steps.push(`Set header '${key}' = '${prettyValue(value)}'.`);
   }
 
-  if (requestBody !== null && requestBody !== undefined) {
-    steps.push(
-      `Add the request body using the generated valid JSON payload shown in the test data section.`,
-    );
+  for (const [key, value] of Object.entries(cookies)) {
+    steps.push(`Set cookie '${key}' = '${prettyValue(value)}'.`);
   }
 
-  steps.push(`Send the request.`);
+  if (requestBody !== null && requestBody !== undefined) {
+    steps.push(`Add the request body: ${prettyJsonInline(requestBody)}.`);
+  }
+
+  steps.push("Send the request.");
 
   if (includeResponseReview) {
     steps.push(
-      `Review the response body and compare it with the documented API contract.`,
+      "Review the response body and compare it with the documented API contract.",
     );
   }
 
   return steps;
+}
+
+function getRequiredQueryParams(endpoint) {
+  const query = Array.isArray(endpoint?.params?.query)
+    ? endpoint.params.query
+    : [];
+  return query.filter((p) => p?.required);
+}
+
+function getOptionalQueryParams(endpoint) {
+  const query = Array.isArray(endpoint?.params?.query)
+    ? endpoint.params.query
+    : [];
+  return query.filter((p) => !p?.required);
+}
+
+function getSuccessStatus(endpoint) {
+  const successCodes = getSuccessResponses(endpoint).map(([code]) =>
+    Number(code),
+  );
+  if (successCodes.length > 0) return successCodes[0];
+
+  const status = endpoint?.response?.status;
+  if (typeof status === "number") return status;
+
+  return 200;
+}
+
+function getContentType(endpoint) {
+  for (const [, response] of getSuccessResponses(endpoint)) {
+    const content = response?.content || {};
+    if (content["application/json"]) return "application/json";
+
+    const keys = Object.keys(content);
+    if (keys.length > 0) return keys[0];
+  }
+
+  return endpoint?.response?.contentType || "application/json";
+}
+
+function getTopLevelResponseFields(endpoint) {
+  const schema = getResponseSchema(endpoint);
+
+  if (schema?.properties && typeof schema.properties === "object") {
+    return Object.keys(schema.properties).slice(0, 10);
+  }
+
+  return Array.isArray(endpoint?.response?.schemaSummary?.properties)
+    ? endpoint.response.schemaSummary.properties.slice(0, 10)
+    : [];
+}
+
+function getResponseHeaders(endpoint) {
+  for (const [, response] of getSuccessResponses(endpoint)) {
+    const headers = response?.headers || {};
+    const names = Object.keys(headers);
+    if (names.length > 0) return names.slice(0, 10);
+  }
+
+  return [];
+}
+
+function getDocumentedErrorCodes(endpoint) {
+  const responses = endpoint?.responses || {};
+  return Object.keys(responses)
+    .filter((code) => /^[45]\d\d$/.test(String(code)))
+    .slice(0, 10);
+}
+
+function getResponseSchema(endpoint) {
+  for (const [, response] of getSuccessResponses(endpoint)) {
+    const schema = getJsonSchemaFromContent(response?.content);
+    if (schema) return schema;
+  }
+
+  return null;
+}
+
+function getRequestSchema(endpoint) {
+  return getJsonSchemaFromContent(endpoint?.requestBody?.content);
+}
+
+function describeSchemaType(schema = {}) {
+  if (schema?.type) return schema.type;
+  if (schema?.properties) return "object";
+  if (schema?.items) return "array";
+  return "value";
+}
+
+function getTopLevelResponseProperties(endpoint) {
+  const schema = getResponseSchema(endpoint);
+  const props =
+    schema?.properties && typeof schema.properties === "object"
+      ? schema.properties
+      : {};
+  return Object.entries(props);
+}
+
+function getRequestSchemaProperties(endpoint) {
+  const schema = getRequestSchema(endpoint);
+  const props =
+    schema?.properties && typeof schema.properties === "object"
+      ? schema.properties
+      : {};
+  return Object.entries(props);
+}
+
+function getActualRequestBody(endpoint) {
+  const body = endpoint?._resolvedTestData?.valid?.body;
+  return body && typeof body === "object" && !Array.isArray(body) ? body : {};
+}
+
+function getActualRequestBodyFields(endpoint) {
+  return Object.keys(getActualRequestBody(endpoint));
+}
+
+function getRequestSchemaPropertyMap(endpoint) {
+  return Object.fromEntries(getRequestSchemaProperties(endpoint));
+}
+
+function buildRequiredFieldAssertions(endpoint) {
+  const schema = getResponseSchema(endpoint);
+  const required = Array.isArray(schema?.required) ? schema.required : [];
+
+  return required
+    .slice(0, 5)
+    .map((field) => `Required response field '${field}' is present.`);
+}
+
+function buildResponseAssertions(endpoint, maxFields = 4) {
+  const entries = getTopLevelResponseProperties(endpoint).slice(0, maxFields);
+  const assertions = [];
+
+  for (const [fieldName, fieldSchema] of entries) {
+    const fieldType = describeSchemaType(fieldSchema);
+
+    if (fieldType === "object") {
+      assertions.push(`The response contains '${fieldName}' as an object.`);
+    } else if (fieldType === "array") {
+      assertions.push(`The response contains '${fieldName}' as an array.`);
+    } else {
+      assertions.push(
+        `The response contains '${fieldName}' with type '${fieldType}'.`,
+      );
+    }
+
+    if (fieldSchema?.format === "email") {
+      assertions.push(`Field '${fieldName}' follows email format.`);
+    }
+
+    if (Array.isArray(fieldSchema?.enum) && fieldSchema.enum.length > 0) {
+      assertions.push(
+        `Field '${fieldName}' contains one of the allowed values: ${fieldSchema.enum.join(", ")}.`,
+      );
+    }
+  }
+
+  return assertions;
+}
+
+function buildRequestFieldAssertions(endpoint, maxFields = 4) {
+  const actualFields = getActualRequestBodyFields(endpoint).slice(0, maxFields);
+  const schemaProps = getRequestSchemaPropertyMap(endpoint);
+  const assertions = [];
+
+  for (const fieldName of actualFields) {
+    const fieldSchema = schemaProps[fieldName] || {};
+    const fieldType = describeSchemaType(fieldSchema);
+
+    if (fieldType === "object") {
+      assertions.push(`Request field '${fieldName}' is sent as an object.`);
+    } else if (fieldType === "array") {
+      assertions.push(`Request field '${fieldName}' is sent as an array.`);
+    } else {
+      assertions.push(
+        `Request field '${fieldName}' matches type '${fieldType}'.`,
+      );
+    }
+
+    if (fieldSchema?.format === "email") {
+      assertions.push(`Request field '${fieldName}' follows email format.`);
+    }
+
+    if (Array.isArray(fieldSchema?.enum) && fieldSchema.enum.length > 0) {
+      assertions.push(
+        `Request field '${fieldName}' uses one of the allowed values: ${fieldSchema.enum.join(", ")}.`,
+      );
+    }
+  }
+
+  return assertions;
 }
 
 function buildContractExpectedResults(endpoint, scenario) {
@@ -83,8 +327,8 @@ function buildContractExpectedResults(endpoint, scenario) {
     return [
       `The API responds with HTTP ${successStatus}.`,
       `The response includes a Content-Type header matching '${contentType}' or a compatible JSON media type.`,
-      `When the endpoint returns a response body, the body is valid JSON.`,
-      `The response structure matches the documented success contract.`,
+      "When the endpoint returns a response body, the body is valid JSON.",
+      "The response structure matches the documented success contract.",
       ...requiredFieldAssertions,
       ...responseAssertions,
       ...(topFields.length > 0 &&
@@ -100,17 +344,17 @@ function buildContractExpectedResults(endpoint, scenario) {
   if (scenario === "status_code") {
     return [
       `The API responds with HTTP ${successStatus}.`,
-      `The returned success status code matches the documented API contract.`,
-      `No unexpected 4xx or 5xx status code is returned for a valid request.`,
+      "The returned success status code matches the documented API contract.",
+      "No unexpected 4xx or 5xx status code is returned for a valid request.",
     ];
   }
 
   if (scenario === "required_fields") {
     return [
       `The API responds with HTTP ${successStatus}.`,
-      `All mandatory response fields defined in the contract are present.`,
-      `No required field is missing from the response payload.`,
-      `No mandatory field is returned with an unexpected top-level structure.`,
+      "All mandatory response fields defined in the contract are present.",
+      "No required field is missing from the response payload.",
+      "No mandatory field is returned with an unexpected top-level structure.",
       ...requiredFieldAssertions,
       ...(topFields.length > 0 && requiredFieldAssertions.length === 0
         ? [
@@ -123,9 +367,9 @@ function buildContractExpectedResults(endpoint, scenario) {
   if (scenario === "content_type") {
     return [
       `The API responds with HTTP ${successStatus}.`,
-      `The response contains a Content-Type header.`,
+      "The response contains a Content-Type header.",
       `The Content-Type header starts with '${contentType}' or matches the documented compatible media type.`,
-      `The response media type matches the API contract.`,
+      "The response media type matches the API contract.",
     ];
   }
 
@@ -136,8 +380,8 @@ function buildContractExpectedResults(endpoint, scenario) {
         ? [
             `The response contains the documented response headers: ${responseHeaders.join(", ")}.`,
           ]
-        : [`The response headers match the documented contract behavior.`]),
-      `No documented response header is unexpectedly missing.`,
+        : ["The response headers match the documented contract behavior."]),
+      "No documented response header is unexpectedly missing.",
     ];
   }
 
@@ -146,7 +390,7 @@ function buildContractExpectedResults(endpoint, scenario) {
     const optionalQuery = getOptionalQueryParams(endpoint).map((p) => p.name);
 
     return [
-      `The endpoint accepts the documented query parameters for a valid request.`,
+      "The endpoint accepts the documented query parameters for a valid request.",
       ...(requiredQuery.length > 0
         ? [
             `Required query parameters are supported: ${requiredQuery.join(", ")}.`,
@@ -157,7 +401,7 @@ function buildContractExpectedResults(endpoint, scenario) {
             `Optional query parameters are accepted when provided according to the contract: ${optionalQuery.join(", ")}.`,
           ]
         : []),
-      `The request is processed according to the documented query parameter contract.`,
+      "The request is processed according to the documented query parameter contract.",
     ];
   }
 
@@ -168,13 +412,13 @@ function buildContractExpectedResults(endpoint, scenario) {
     const pathParams = schemaPathParams.map((p) => p?.name).filter(Boolean);
 
     return [
-      `The endpoint accepts the documented path parameters.`,
+      "The endpoint accepts the documented path parameters.",
       ...(pathParams.length > 0
         ? [
             `The documented path parameters for this endpoint are: ${pathParams.join(", ")}.`,
           ]
         : []),
-      `The request is processed according to the documented path parameter contract.`,
+      "The request is processed according to the documented path parameter contract.",
     ];
   }
 
@@ -183,42 +427,46 @@ function buildContractExpectedResults(endpoint, scenario) {
     const requestRequired = Array.isArray(requestSchema?.required)
       ? requestSchema.required
       : [];
-    const requestBody = buildRequestBody(endpoint);
-    const bodyFields = requestBody ? Object.keys(requestBody) : [];
     const requestFieldAssertions = buildRequestFieldAssertions(endpoint, 4);
+    const actualBodyFields = getActualRequestBodyFields(endpoint);
 
     return [
-      `The request body structure is accepted by the API for a valid request.`,
-      ...requestRequired
-        .slice(0, 5)
-        .map((field) => `Required request field '${field}' is included.`),
+      "The provided request body is accepted by the API for a valid request.",
+      ...(requestRequired.length > 0
+        ? requestRequired
+            .slice(0, 5)
+            .map(
+              (field) =>
+                `Documented required request field '${field}' is supported when provided.`,
+            )
+        : [
+            "The request body may contain a valid minimal or partial payload when the schema does not define mandatory fields.",
+          ]),
       ...requestFieldAssertions,
-      ...(bodyFields.length > 0 &&
-      requestRequired.length === 0 &&
-      requestFieldAssertions.length === 0
+      ...(actualBodyFields.length > 0
         ? [
-            `The tester can confirm the documented request body fields: ${bodyFields.join(", ")}.`,
+            `This test payload includes these request fields: ${actualBodyFields.join(", ")}.`,
           ]
         : []),
-      `No contract-related request body validation error occurs for valid input.`,
+      "No request body validation error occurs for the provided valid payload.",
     ];
   }
 
   if (scenario === "error_response") {
     const errorCodes = getDocumentedErrorCodes(endpoint);
     return [
-      `The API contract documents error responses consistently.`,
+      "The API contract documents error responses consistently.",
       ...(errorCodes.length > 0
         ? [
             `The documented error status codes include: ${errorCodes.join(", ")}.`,
           ]
-        : [`Documented error responses are available where applicable.`]),
-      `Error response behavior is consistent with the documented API contract.`,
-      `Each documented error response should return a controlled and understandable failure payload.`,
+        : ["Documented error responses are available where applicable."]),
+      "Error response behavior is consistent with the documented API contract.",
+      "Each documented error response should return a controlled and understandable failure payload.",
     ];
   }
 
-  return [`The request follows the documented API contract.`];
+  return ["The request follows the documented API contract."];
 }
 
 function buildContractValidationFocus(endpoint, scenario) {
@@ -269,12 +517,12 @@ function buildContractValidationFocus(endpoint, scenario) {
   }
 
   if (scenario === "request_body") {
+    const actualBodyFields = getActualRequestBodyFields(endpoint);
+
     return [
       "Request body contract",
-      "Documented request body fields",
-      ...getRequestSchemaProperties(endpoint)
-        .slice(0, 3)
-        .map(([field]) => `Field:${field}`),
+      "Provided request payload fields",
+      ...actualBodyFields.slice(0, 3).map((field) => `Field:${field}`),
     ];
   }
 
@@ -285,218 +533,8 @@ function buildContractValidationFocus(endpoint, scenario) {
   return ["API contract validation"];
 }
 
-function getRequiredQueryParams(endpoint) {
-  const query = Array.isArray(endpoint?.params?.query)
-    ? endpoint.params.query
-    : [];
-  return query.filter((p) => p?.required);
-}
-
-function getOptionalQueryParams(endpoint) {
-  const query = Array.isArray(endpoint?.params?.query)
-    ? endpoint.params.query
-    : [];
-  return query.filter((p) => !p?.required);
-}
-
-function buildRequestBody(endpoint) {
-  const schema =
-    endpoint?.requestBody?.content?.["application/json"]?.schema ||
-    endpoint?.requestBody?.content?.["application/*+json"]?.schema ||
-    null;
-
-  if (!schema) return null;
-
-  return generateObjectFromSchema(schema);
-}
-
-function getSuccessStatus(endpoint) {
-  const responses = endpoint?.responses || {};
-  if (responses["200"]) return 200;
-  if (responses["201"]) return 201;
-  if (responses["202"]) return 202;
-  if (responses["204"]) return 204;
-
-  const status = endpoint?.response?.status;
-  if (typeof status === "number") return status;
-
-  return 200;
-}
-
-function getContentType(endpoint) {
-  const responses = endpoint?.responses || {};
-  for (const code of Object.keys(responses)) {
-    if (!/^2\d\d$/.test(String(code))) continue;
-    const content = responses[code]?.content || {};
-    if (content["application/json"]) return "application/json";
-    const keys = Object.keys(content);
-    if (keys.length > 0) return keys[0];
-  }
-
-  return endpoint?.response?.contentType || "application/json";
-}
-
-function getTopLevelResponseFields(endpoint) {
-  const responses = endpoint?.responses || {};
-  for (const code of Object.keys(responses)) {
-    if (!/^2\d\d$/.test(String(code))) continue;
-    const schema =
-      responses[code]?.content?.["application/json"]?.schema ||
-      responses[code]?.content?.["application/*+json"]?.schema ||
-      null;
-
-    if (schema?.properties && typeof schema.properties === "object") {
-      return Object.keys(schema.properties).slice(0, 10);
-    }
-  }
-
-  return Array.isArray(endpoint?.response?.schemaSummary?.properties)
-    ? endpoint.response.schemaSummary.properties.slice(0, 10)
-    : [];
-}
-
-function getResponseHeaders(endpoint) {
-  const responses = endpoint?.responses || {};
-  for (const code of Object.keys(responses)) {
-    if (!/^2\d\d$/.test(String(code))) continue;
-    const headers = responses[code]?.headers || {};
-    const names = Object.keys(headers);
-    if (names.length > 0) return names.slice(0, 10);
-  }
-  return [];
-}
-
-function getDocumentedErrorCodes(endpoint) {
-  const responses = endpoint?.responses || {};
-  return Object.keys(responses)
-    .filter((code) => /^[45]\d\d$/.test(String(code)))
-    .slice(0, 10);
-}
-
-function getResponseSchema(endpoint) {
-  const responses = endpoint?.responses || {};
-  for (const code of Object.keys(responses)) {
-    if (!/^2\d\d$/.test(String(code))) continue;
-
-    const schema =
-      responses[code]?.content?.["application/json"]?.schema ||
-      responses[code]?.content?.["application/*+json"]?.schema ||
-      null;
-
-    if (schema) return schema;
-  }
-
-  return null;
-}
-
-function getRequestSchema(endpoint) {
-  return (
-    endpoint?.requestBody?.content?.["application/json"]?.schema ||
-    endpoint?.requestBody?.content?.["application/*+json"]?.schema ||
-    null
-  );
-}
-
-function describeSchemaType(schema = {}) {
-  if (schema?.type) return schema.type;
-  if (schema?.properties) return "object";
-  if (schema?.items) return "array";
-  return "value";
-}
-
-function getTopLevelResponseProperties(endpoint) {
-  const schema = getResponseSchema(endpoint);
-  const props =
-    schema?.properties && typeof schema.properties === "object"
-      ? schema.properties
-      : {};
-  return Object.entries(props);
-}
-
-function getRequestSchemaProperties(endpoint) {
-  const schema = getRequestSchema(endpoint);
-  const props =
-    schema?.properties && typeof schema.properties === "object"
-      ? schema.properties
-      : {};
-  return Object.entries(props);
-}
-
-function buildRequiredFieldAssertions(endpoint) {
-  const schema = getResponseSchema(endpoint);
-  const required = Array.isArray(schema?.required) ? schema.required : [];
-
-  return required
-    .slice(0, 5)
-    .map((field) => `Required response field '${field}' is present.`);
-}
-
-function buildResponseAssertions(endpoint, maxFields = 4) {
-  const entries = getTopLevelResponseProperties(endpoint).slice(0, maxFields);
-  const assertions = [];
-
-  for (const [fieldName, fieldSchema] of entries) {
-    const fieldType = describeSchemaType(fieldSchema);
-
-    if (fieldType === "object") {
-      assertions.push(`The response contains '${fieldName}' as an object.`);
-    } else if (fieldType === "array") {
-      assertions.push(`The response contains '${fieldName}' as an array.`);
-    } else {
-      assertions.push(
-        `The response contains '${fieldName}' with type '${fieldType}'.`,
-      );
-    }
-
-    if (fieldSchema?.format === "email") {
-      assertions.push(`Field '${fieldName}' follows email format.`);
-    }
-
-    if (Array.isArray(fieldSchema?.enum) && fieldSchema.enum.length > 0) {
-      assertions.push(
-        `Field '${fieldName}' contains one of the allowed values: ${fieldSchema.enum.join(", ")}.`,
-      );
-    }
-  }
-
-  return assertions;
-}
-
-function buildRequestFieldAssertions(endpoint, maxFields = 4) {
-  const entries = getRequestSchemaProperties(endpoint).slice(0, maxFields);
-  const assertions = [];
-
-  for (const [fieldName, fieldSchema] of entries) {
-    const fieldType = describeSchemaType(fieldSchema);
-
-    if (fieldType === "object") {
-      assertions.push(`Request field '${fieldName}' is sent as an object.`);
-    } else if (fieldType === "array") {
-      assertions.push(`Request field '${fieldName}' is sent as an array.`);
-    } else {
-      assertions.push(
-        `Request field '${fieldName}' matches type '${fieldType}'.`,
-      );
-    }
-
-    if (fieldSchema?.format === "email") {
-      assertions.push(`Request field '${fieldName}' follows email format.`);
-    }
-
-    if (Array.isArray(fieldSchema?.enum) && fieldSchema.enum.length > 0) {
-      assertions.push(
-        `Request field '${fieldName}' uses one of the allowed values: ${fieldSchema.enum.join(", ")}.`,
-      );
-    }
-  }
-
-  return assertions;
-}
-
 function hasRequestBody(endpoint) {
-  const method = String(endpoint?.method || "GET").toUpperCase();
-  if (method === "GET" || method === "DELETE") return false;
-  return !!buildRequestBody(endpoint);
+  return !!getRequestSchema(endpoint);
 }
 
 function baseCase(
@@ -511,7 +549,8 @@ function baseCase(
     path_params: {},
     query_params: {},
     headers: {},
-    request_body: hasRequestBody(endpoint) ? buildRequestBody(endpoint) : null,
+    cookies: {},
+    request_body: null,
   };
 
   return {
@@ -527,13 +566,16 @@ function baseCase(
       "Required authentication or access credentials are available if applicable.",
     ],
     test_data: initialTestData,
-    steps: buildExecutionSteps(method, path, initialTestData, {
+    steps: buildExecutionSteps(endpoint, method, path, initialTestData, {
       includeResponseReview,
     }),
     expected_results: [],
     api_details: {
       method,
       path,
+      base_url: endpoint?.api_details?.base_url || "",
+      full_url_template: endpoint?.api_details?.full_url_template || "",
+      full_url_resolved: endpoint?.api_details?.full_url_resolved || "",
     },
     validation_focus: [],
     references: [],
@@ -575,6 +617,7 @@ export function makeContractStatusCodeTemplate(endpoint) {
 
   return tc;
 }
+
 export function makeContractRequiredFieldsTemplate(endpoint) {
   const method = String(endpoint?.method || "GET").toUpperCase();
   const path = endpoint?.path || "/";
@@ -598,6 +641,7 @@ export function makeContractRequiredFieldsTemplate(endpoint) {
 
   return tc;
 }
+
 export function makeContractContentTypeTemplate(endpoint) {
   const method = String(endpoint?.method || "GET").toUpperCase();
   const path = endpoint?.path || "/";
@@ -637,6 +681,7 @@ export function makeContractResponseHeadersTemplate(endpoint) {
 
   return tc;
 }
+
 export function makeContractQueryParamsTemplate(endpoint) {
   const method = String(endpoint?.method || "GET").toUpperCase();
   const path = endpoint?.path || "/";
@@ -653,6 +698,7 @@ export function makeContractQueryParamsTemplate(endpoint) {
 
   return tc;
 }
+
 export function makeContractPathParamsTemplate(endpoint) {
   const method = String(endpoint?.method || "GET").toUpperCase();
   const path = endpoint?.path || "/";
@@ -673,11 +719,15 @@ export function makeContractPathParamsTemplate(endpoint) {
 export function makeContractRequestBodyTemplate(endpoint) {
   const method = String(endpoint?.method || "POST").toUpperCase();
   const path = endpoint?.path || "/";
+  const actualBodyFields = getActualRequestBodyFields(endpoint);
 
   const tc = baseCase(endpoint, {
-    title: `Verify ${method} ${path} accepts documented request body fields`,
+    title:
+      actualBodyFields.length > 0
+        ? `Verify ${method} ${path} accepts a valid request body payload`
+        : `Verify ${method} ${path} accepts the documented request body`,
     objective:
-      "Verify that the endpoint accepts a request body matching the documented API contract.",
+      "Verify that the endpoint accepts a valid request body payload aligned with the documented API contract.",
     priority: "P1",
     includeResponseReview: true,
   });
@@ -685,8 +735,14 @@ export function makeContractRequestBodyTemplate(endpoint) {
   tc.expected_results = buildContractExpectedResults(endpoint, "request_body");
   tc.validation_focus = buildContractValidationFocus(endpoint, "request_body");
 
+  if (actualBodyFields.length > 0) {
+    tc.review_notes =
+      "This case validates the actual fields included in the generated payload, not every documented schema property.";
+  }
+
   return tc;
 }
+
 export function makeContractErrorResponseTemplate(endpoint) {
   const method = String(endpoint?.method || "GET").toUpperCase();
   const path = endpoint?.path || "/";
@@ -712,4 +768,5 @@ export function makeContractErrorResponseTemplate(endpoint) {
 
   return tc;
 }
+
 export { buildExecutionSteps, hasRequestBody };
