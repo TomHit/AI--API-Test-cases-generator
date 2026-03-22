@@ -128,42 +128,61 @@ function buildQueryParams(endpoint) {
 
 function buildHeaders(endpoint) {
   const headers = {};
-  const security = Array.isArray(endpoint?.security) ? endpoint.security : [];
-
-  if (security.length > 0) {
-    headers.Authorization = "Bearer <valid_token>";
-  }
-
   const headerParams = Array.isArray(endpoint?.params?.header)
     ? endpoint.params.header
     : [];
 
+  // 1) Read explicit/synthetic header params from parsed spec first
   for (const p of headerParams) {
     const name = String(p?.name || "").trim();
     if (!name) continue;
 
-    const lower = name.toLowerCase();
-
-    if (lower === "authorization") {
-      headers[name] = headers[name] || "Bearer <valid_token>";
+    if (p?.example !== undefined) {
+      headers[name] = p.example;
       continue;
     }
 
-    if (lower === "accept") {
-      headers[name] = "application/json";
+    if (p?.schema?.example !== undefined) {
+      headers[name] = p.schema.example;
       continue;
     }
 
-    if (lower === "content-type") {
-      headers[name] = "application/json";
+    if (Array.isArray(p?.schema?.enum) && p.schema.enum.length > 0) {
+      headers[name] = p.schema.enum[0];
       continue;
     }
 
     if (p?.required) {
+      const lower = name.toLowerCase();
+
+      if (lower === "authorization") {
+        headers[name] = "Bearer <access_token>";
+        continue;
+      }
+
       headers[name] = `<valid_${name}>`;
     }
   }
 
+  // 2) Derive Content-Type from requestBody media type if request body exists
+  const requestContentType = endpoint?.requestBody?.preferredContentType;
+  if (
+    requestContentType &&
+    !Object.keys(headers).some((k) => k.toLowerCase() === "content-type")
+  ) {
+    headers["Content-Type"] = requestContentType;
+  }
+
+  // 3) Derive Accept from preferred response content type
+  const responseContentType = endpoint?.response?.contentType;
+  if (
+    responseContentType &&
+    !Object.keys(headers).some((k) => k.toLowerCase() === "accept")
+  ) {
+    headers.Accept = responseContentType;
+  }
+
+  // 4) Final fallback only when spec gives nothing
   if (!Object.keys(headers).some((k) => k.toLowerCase() === "accept")) {
     headers.Accept = "application/json";
   }
@@ -171,10 +190,21 @@ function buildHeaders(endpoint) {
   return headers;
 }
 
-function getRequestSchema(endpoint) {
+//
+// 🔥 FIX STARTS HERE
+//
+
+function getRequestMedia(endpoint) {
+  const content = endpoint?.requestBody?.content || {};
+  const preferred = endpoint?.requestBody?.preferredContentType;
+
   return (
-    endpoint?.requestBody?.content?.["application/json"]?.schema ||
-    endpoint?.requestBody?.content?.["application/*+json"]?.schema ||
+    content?.[preferred] ||
+    content["application/json"] ||
+    content["application/*+json"] ||
+    content["application/x-www-form-urlencoded"] ||
+    content["multipart/form-data"] ||
+    Object.values(content)[0] ||
     null
   );
 }
@@ -200,25 +230,20 @@ function buildRequestBodyFromSchema(schema, fieldName = "value") {
 
   if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
     const merged = {};
-
     for (const item of schema.allOf) {
       const value = buildRequestBodyFromSchema(item, fieldName);
       if (value && typeof value === "object" && !Array.isArray(value)) {
         Object.assign(merged, value);
       }
     }
-
     if (Object.keys(merged).length > 0) return merged;
   }
 
   if (schema.type === "object" || schema.properties) {
     const out = {};
-    const props = schema.properties || {};
-
-    for (const [key, value] of Object.entries(props)) {
+    for (const [key, value] of Object.entries(schema.properties || {})) {
       out[key] = buildRequestBodyFromSchema(value, key);
     }
-
     return out;
   }
 
@@ -241,10 +266,26 @@ function buildRequestBodyFromSchema(schema, fieldName = "value") {
 }
 
 function buildRequestBody(endpoint) {
-  const schema = getRequestSchema(endpoint);
-  if (!schema) return null;
-  return buildRequestBodyFromSchema(schema, "request_body");
+  const media = getRequestMedia(endpoint);
+
+  if (!media) return null;
+
+  // ✅ USE EXAMPLE FIRST
+  if (media.example !== undefined) {
+    return media.example;
+  }
+
+  // ✅ FALLBACK TO SCHEMA
+  if (media.schema) {
+    return buildRequestBodyFromSchema(media.schema, "request_body");
+  }
+
+  return null;
 }
+
+//
+// 🔥 FIX ENDS HERE
+//
 
 function shouldNeedReview(rule) {
   const templateKey = String(rule?.template_key || "").toLowerCase();

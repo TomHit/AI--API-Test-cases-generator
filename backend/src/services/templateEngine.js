@@ -1267,35 +1267,45 @@ async function resolveCsvRules(endpoint, options = {}) {
 
 /* ------------------ MAIN GENERATION ------------------ */
 
+function normalizeDedupText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function getReferenceValue(tc, prefix) {
+  const refs = Array.isArray(tc?.references) ? tc.references : [];
+  const found = refs.find((x) =>
+    String(x || "")
+      .toLowerCase()
+      .startsWith(prefix),
+  );
+  return found ? normalizeDedupText(found) : "";
+}
+
 function buildDedupKey(tc) {
-  return JSON.stringify({
-    title: String(tc?.title || "")
-      .trim()
-      .toLowerCase(),
-    test_type: String(tc?.test_type || "")
-      .trim()
-      .toLowerCase(),
-    objective: String(tc?.objective || "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase(),
-    method: String(tc?.api_details?.method || "")
-      .trim()
-      .toUpperCase(),
-    path: String(tc?.api_details?.path || "").trim(),
-    steps: ensureArray(tc?.steps).map((x) =>
-      String(x || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase(),
-    ),
-    expected_results: ensureArray(tc?.expected_results).map((x) =>
-      String(x || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase(),
-    ),
-  });
+  const method = String(
+    tc?.api_details?.method || tc?.method || "GET",
+  ).toUpperCase();
+
+  const path = String(tc?.api_details?.path || tc?.path || "/").trim();
+
+  const testType = normalizeDedupText(tc?.test_type);
+
+  const ruleRef = getReferenceValue(tc, "rule_id:");
+  const templateRef = getReferenceValue(tc, "template_key:");
+
+  // Best dedupe identity: same endpoint + same type + same originating rule/template
+  if (ruleRef || templateRef) {
+    return `${method}|${path}|${testType}|${ruleRef}|${templateRef}`;
+  }
+
+  // Fallback only if references are missing
+  const title = normalizeDedupText(tc?.title);
+  const objective = normalizeDedupText(tc?.objective);
+
+  return `${method}|${path}|${testType}|${title}|${objective}`;
 }
 
 function dedupeCases(cases) {
@@ -1340,10 +1350,46 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
   if (include.includes("negative")) {
     const autoNegativeCases = buildUniversalNegativeCases(enrichedEndpoint);
     const schemaNegativeCases = generateNegativeCases(enrichedEndpoint);
-    cases.push(...autoNegativeCases, ...schemaNegativeCases);
+    const existingTemplateKeys = new Set(
+      cases
+        .flatMap((tc) => tc.references || [])
+        .filter((ref) => ref.startsWith("template_key:"))
+        .map((ref) => ref.replace("template_key:", "").toLowerCase()),
+    );
+
+    // Add only missing templates
+    for (const tc of autoNegativeCases) {
+      const key = (tc.references || [])
+        .find((r) => r.startsWith("template_key:"))
+        ?.replace("template_key:", "")
+        ?.toLowerCase();
+
+      if (!key || !existingTemplateKeys.has(key)) {
+        cases.push(tc);
+      }
+    }
+
+    for (const tc of schemaNegativeCases) {
+      const key = (tc.references || [])
+        .find((r) => r.startsWith("template_key:"))
+        ?.replace("template_key:", "")
+        ?.toLowerCase();
+
+      if (!key || !existingTemplateKeys.has(key)) {
+        cases.push(tc);
+      }
+    }
   }
 
   return dedupeCases(cases);
+}
+
+function isGenericTitle(value) {
+  const t = String(value || "")
+    .trim()
+    .toLowerCase();
+
+  return !t || t.startsWith("verify");
 }
 
 function formatGeneratedCase(tc, endpoint) {
@@ -1355,7 +1401,7 @@ function formatGeneratedCase(tc, endpoint) {
 
   /* ---------------- TITLE FIX ---------------- */
 
-  if (tc.title?.startsWith("Verify")) {
+  if (isGenericTitle(tc.title)) {
     const cleanPath = String(path || "/").trim();
 
     const resourceName =
@@ -1409,6 +1455,7 @@ function formatGeneratedCase(tc, endpoint) {
       }
     }
   }
+
   /* ---------------- STEPS FIX ---------------- */
 
   const steps = [];
@@ -1443,66 +1490,36 @@ function formatGeneratedCase(tc, endpoint) {
     steps.push(`Set HTTP method to ${method}.`);
     steps.push(`Use endpoint path: ${cleanPath}.`);
 
-    if (hasHeaders) {
-      steps.push(`Add required headers.`);
-    }
-
-    if (hasPathParams) {
-      steps.push(`Provide valid path parameter values.`);
-    }
-
-    if (hasQueryParams) {
-      steps.push(`Provide required query parameter values.`);
-    }
+    if (hasHeaders) steps.push("Add required headers.");
+    if (hasPathParams) steps.push("Provide valid path parameter values.");
+    if (hasQueryParams) steps.push("Provide required query parameter values.");
 
     steps.push(sendStep);
-    steps.push(`Capture the response body.`);
+    steps.push("Capture the response body.");
     steps.push(
-      `Validate the response structure against the documented schema.`,
+      "Validate the response structure against the documented schema.",
     );
   } else if (testType === "negative") {
     steps.push(`Set HTTP method to ${method}.`);
     steps.push(`Use endpoint path: ${cleanPath}.`);
 
-    if (hasHeaders) {
-      steps.push(`Add required headers.`);
-    }
-
-    if (hasPathParams) {
-      steps.push(`Provide valid path parameter values.`);
-    }
-
-    if (hasQueryParams) {
-      steps.push(`Provide required query parameter values.`);
-    }
-
-    if (hasBody) {
-      steps.push(`Provide a valid request body first.`);
-    }
+    if (hasHeaders) steps.push("Add required headers.");
+    if (hasPathParams) steps.push("Provide valid path parameter values.");
+    if (hasQueryParams) steps.push("Provide required query parameter values.");
+    if (hasBody) steps.push("Provide a valid request body first.");
 
     steps.push(
-      `Modify the request with invalid, unsupported, or missing input.`,
+      "Modify the request with invalid, unsupported, or missing input.",
     );
     steps.push(sendStep);
   } else {
     steps.push(`Set HTTP method to ${method}.`);
     steps.push(`Use endpoint path: ${cleanPath}.`);
 
-    if (hasHeaders) {
-      steps.push(`Add required headers.`);
-    }
-
-    if (hasPathParams) {
-      steps.push(`Provide valid path parameter values.`);
-    }
-
-    if (hasQueryParams) {
-      steps.push(`Provide required query parameter values.`);
-    }
-
-    if (hasBody) {
-      steps.push(`Provide request body with required fields.`);
-    }
+    if (hasHeaders) steps.push("Add required headers.");
+    if (hasPathParams) steps.push("Provide valid path parameter values.");
+    if (hasQueryParams) steps.push("Provide required query parameter values.");
+    if (hasBody) steps.push("Provide request body with required fields.");
 
     steps.push(sendStep);
   }
@@ -1516,67 +1533,67 @@ function formatGeneratedCase(tc, endpoint) {
   if (testType === "contract") {
     if (method === "GET") {
       if (cleanPath.includes("opportunities")) {
-        expected.push(`API returns HTTP 200.`);
-        expected.push(`Response contains a list of trend opportunities.`);
-        expected.push(`Each item follows the documented response structure.`);
+        expected.push("API returns HTTP 200.");
+        expected.push("Response contains a list of trend opportunities.");
+        expected.push("Each item follows the documented response structure.");
       } else if (cleanPath.includes("auth/me")) {
-        expected.push(`API returns HTTP 200.`);
-        expected.push(`Response contains authenticated user details.`);
-        expected.push(`Response body is valid JSON.`);
+        expected.push("API returns HTTP 200.");
+        expected.push("Response contains authenticated user details.");
+        expected.push("Response body is valid JSON.");
       } else {
-        expected.push(`API returns HTTP 200.`);
-        expected.push(`Response contains the expected resource data.`);
-        expected.push(`Response body is valid JSON.`);
+        expected.push("API returns HTTP 200.");
+        expected.push("Response contains the expected resource data.");
+        expected.push("Response body is valid JSON.");
       }
     } else if (method === "POST") {
       if (cleanPath.includes("login")) {
-        expected.push(`API returns HTTP 200.`);
+        expected.push("API returns HTTP 200.");
         expected.push(
-          `Response contains authentication success details such as token or session information.`,
+          "Response contains authentication success details such as token or session information.",
         );
-        expected.push(`Response body is valid JSON.`);
+        expected.push("Response body is valid JSON.");
       } else {
-        expected.push(`API returns HTTP 200 or 201.`);
+        expected.push("API returns HTTP 200 or 201.");
         expected.push(
-          `Response confirms the request was processed successfully.`,
+          "Response confirms the request was processed successfully.",
         );
-        expected.push(`Response body is valid JSON.`);
+        expected.push("Response body is valid JSON.");
       }
     } else if (method === "DELETE") {
-      expected.push(`API returns a successful deletion response.`);
-      expected.push(`Requested resource is deleted or marked as removed.`);
+      expected.push("API returns a successful deletion response.");
+      expected.push("Requested resource is deleted or marked as removed.");
     } else {
-      expected.push(`API returns a successful response.`);
-      expected.push(`Response reflects the requested operation outcome.`);
+      expected.push("API returns a successful response.");
+      expected.push("Response reflects the requested operation outcome.");
     }
   }
 
   if (testType === "negative") {
     if (cleanPath.includes("login")) {
-      expected.push(`API rejects the login request.`);
+      expected.push("API rejects the login request.");
       expected.push(
-        `Error response indicates invalid, missing, or unsupported input.`,
+        "Error response indicates invalid, missing, or unsupported input.",
       );
-      expected.push(`No authentication token or session is created.`);
+      expected.push("No authentication token or session is created.");
     } else {
-      expected.push(`API rejects the request.`);
-      expected.push(`Appropriate client error status code is returned (4xx).`);
+      expected.push("API rejects the request.");
+      expected.push("Appropriate client error status code is returned (4xx).");
       expected.push(
-        `Error response clearly indicates invalid, missing, or unsupported input.`,
+        "Error response clearly indicates invalid, missing, or unsupported input.",
       );
     }
   }
 
   if (testType === "schema") {
     if (cleanPath.includes("auth/me")) {
-      expected.push(`API returns HTTP 200.`);
-      expected.push(`Response contains authenticated user details.`);
-      expected.push(`All required schema fields are present.`);
-      expected.push(`Field data types match the documented schema.`);
+      expected.push("API returns HTTP 200.");
+      expected.push("Response contains authenticated user details.");
+      expected.push("All required schema fields are present.");
+      expected.push("Field data types match the documented schema.");
     } else {
-      expected.push(`Response matches the documented schema.`);
-      expected.push(`All required fields are present.`);
-      expected.push(`Field data types match the schema definition.`);
+      expected.push("Response matches the documented schema.");
+      expected.push("All required fields are present.");
+      expected.push("Field data types match the schema definition.");
     }
   }
 
