@@ -5,6 +5,36 @@ function buildModuleName(endpoint) {
   if (firstTag) return `${String(firstTag).trim()} API`;
   return `${endpoint?.method || "API"} ${endpoint?.path || ""}`.trim();
 }
+function buildSchemaTitle(endpoint, scenario) {
+  const method = String(endpoint?.method || "GET").toUpperCase();
+  const path = endpoint?.path || "/";
+
+  const resource =
+    path
+      .split("/")
+      .filter(Boolean)
+      .filter((p) => !p.startsWith("{"))
+      .pop() || "resource";
+
+  const name = resource.replace(/[_-]+/g, " ");
+
+  const map = {
+    response: `Validate ${name} response schema`,
+    required_fields: `Ensure required fields are present in ${name} response`,
+    field_types: `Validate data types in ${name} response`,
+    enum: `Validate enum values in ${name} response`,
+    nested: `Validate nested objects in ${name} response`,
+    array: `Validate array structure in ${name} response`,
+    format: `Validate field formats in ${name} response`,
+    numeric: `Validate numeric constraints in ${name} response`,
+    string: `Validate string length constraints in ${name} response`,
+    pattern: `Validate pattern constraints in ${name} response`,
+    composition: `Validate composed schema rules for ${name}`,
+    request_body: `Validate request payload schema for ${name}`,
+  };
+
+  return map[scenario] || `Validate schema for ${name}`;
+}
 
 function isObject(v) {
   return v && typeof v === "object" && !Array.isArray(v);
@@ -151,11 +181,14 @@ function buildQueryParams(endpoint) {
 }
 
 function buildValueFromSchema(schema, fieldName = "value") {
+  const name = String(fieldName || "value").toLowerCase();
+
   if (!schema || typeof schema !== "object") {
     return `<valid_${fieldName}>`;
   }
 
   if (schema.example !== undefined) return schema.example;
+  if (schema.default !== undefined) return schema.default;
 
   if (Array.isArray(schema.enum) && schema.enum.length > 0) {
     return schema.enum[0];
@@ -174,7 +207,7 @@ function buildValueFromSchema(schema, fieldName = "value") {
 
     for (const item of schema.allOf) {
       const value = buildValueFromSchema(item, fieldName);
-      if (isObject(value)) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
         Object.assign(merged, value);
       }
     }
@@ -184,9 +217,21 @@ function buildValueFromSchema(schema, fieldName = "value") {
 
   if (schema.type === "object" || schema.properties) {
     const out = {};
-    const props = isObject(schema.properties) ? schema.properties : {};
+    const props =
+      schema.properties && typeof schema.properties === "object"
+        ? schema.properties
+        : {};
 
-    for (const [key, value] of Object.entries(props)) {
+    const required = Array.isArray(schema.required) ? schema.required : [];
+    const propEntries = Object.entries(props);
+
+    // Prefer required fields first
+    const orderedEntries = [
+      ...propEntries.filter(([key]) => required.includes(key)),
+      ...propEntries.filter(([key]) => !required.includes(key)),
+    ];
+
+    for (const [key, value] of orderedEntries) {
       out[key] = buildValueFromSchema(value, key);
     }
 
@@ -197,21 +242,39 @@ function buildValueFromSchema(schema, fieldName = "value") {
     return [buildValueFromSchema(schema.items || {}, `${fieldName}_item`)];
   }
 
+  // ---- semantic value generation ----
+
+  if (name.includes("email")) return "qa.user@example.com";
+  if (name.includes("password")) return "ValidPassword123!";
+  if (name.includes("username")) return "qa_user";
+  if (name === "name" || name.endsWith("_name")) return "QA Test User";
+  if (name.includes("first_name")) return "QA";
+  if (name.includes("last_name")) return "User";
+  if (name.includes("phone") || name.includes("mobile")) return "9876543210";
+  if (name.includes("token")) return "sample_token_123";
+  if (name.includes("session")) return "sample_session_123";
+  if (name === "id" || name.endsWith("_id")) return "12345";
+  if (name.includes("url") || name.includes("uri"))
+    return "https://example.com";
+  if (name.includes("city")) return "Mumbai";
+  if (name.includes("country")) return "India";
+  if (name.includes("address")) return "123 Test Street";
+  if (name.includes("zip") || name.includes("postal")) return "400001";
+
   if (schema.format === "email") return "qa.user@example.com";
   if (schema.format === "uuid") return "123e4567-e89b-12d3-a456-426614174000";
   if (schema.format === "date-time") return "2026-01-01T00:00:00Z";
   if (schema.format === "date") return "2026-01-01";
-  if (schema.format === "uri" || schema.format === "url") {
+  if (schema.format === "uri" || schema.format === "url")
     return "https://example.com";
-  }
 
-  if (schema.type === "boolean") return false;
+  if (schema.type === "boolean") return true;
   if (schema.type === "integer") return 1;
   if (schema.type === "number") return 1.5;
+  if (schema.type === "string") return `<valid_${fieldName}>`;
 
   return `<valid_${fieldName}>`;
 }
-
 function buildRequestBody(endpoint) {
   const schema = getRequestSchema(endpoint);
   if (!schema) return null;
@@ -530,7 +593,6 @@ function baseCase(endpoint, { title, objective, priority = "P1" }) {
         : null,
     },
     steps: [
-      "Open an API client such as Postman or any approved API testing tool.",
       `Select the ${method} method.`,
       `Enter the endpoint URL using the configured base URL and path ${path}.`,
       "Add all required path parameters, query parameters, and headers.",
@@ -560,7 +622,7 @@ export function makeSchemaResponseTemplate(endpoint) {
   const allProps = getSchemaProperties(schema);
 
   const tc = baseCase(endpoint, {
-    title: `Verify ${method} ${path} response matches the documented schema`,
+    title: buildSchemaTitle(endpoint, "response"),
     objective:
       "Verify that the response body complies with the documented response schema, including mandatory fields and structure.",
     priority: "P1",
@@ -572,7 +634,7 @@ export function makeSchemaResponseTemplate(endpoint) {
 
   tc.expected_results = [
     `The API responds with HTTP ${successStatus}.`,
-    "The response structure matches the documented response schema.",
+    "Response structure matches the API schema.",
     ...requiredFields
       .slice(0, 5)
       .map((field) => `Required response field '${field}' is present.`),
@@ -663,7 +725,6 @@ export function makeSchemaFieldTypesTemplate(endpoint) {
           `The tester should validate field types for documented properties such as: ${props.join(", ")}.`,
         ]
       : []),
-    "No field is returned with an unexpected type.",
   ];
 
   tc.validation_focus = [
@@ -1011,7 +1072,7 @@ export function makeSchemaRequestBodyTemplate(endpoint) {
     actualBodyFields.length === 0
       ? [`Documented request fields include: ${props.join(", ")}.`]
       : []),
-    "The request is accepted by the API when valid schema-compliant data is provided.",
+    "API accepts the request with valid schema-compliant payload.",
     "No schema-related validation failure occurs for the provided valid payload.",
   ];
 

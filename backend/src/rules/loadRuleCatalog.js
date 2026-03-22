@@ -28,9 +28,15 @@ function normalizeSeverity(value) {
 }
 
 function isValidCategory(category) {
-  return ["contract", "schema", "negative", "auth"].includes(category);
+  return [
+    "contract",
+    "schema",
+    "negative",
+    "auth",
+    "smoke",
+    "regression",
+  ].includes(category);
 }
-
 function normalizeRuleRow(row) {
   const normalized = {
     rule_id: clean(row.rule_id),
@@ -45,6 +51,16 @@ function normalizeRuleRow(row) {
     notes: clean(row.notes),
     template_key: clean(row.template_key),
   };
+
+  if (normalized.category === "smoke") {
+    normalized.category = "contract";
+    normalized.original_category = "smoke";
+  }
+
+  if (normalized.category === "regression") {
+    normalized.category = "contract";
+    normalized.original_category = "regression";
+  }
 
   if (!normalized.rule_id) {
     throw new Error("Missing rule_id");

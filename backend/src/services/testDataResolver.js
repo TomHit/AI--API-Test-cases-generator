@@ -11,6 +11,53 @@ function clone(value) {
 function isObject(v) {
   return v && typeof v === "object" && !Array.isArray(v);
 }
+function resolveJsonPointer(root, ref) {
+  if (!ref || typeof ref !== "string" || !ref.startsWith("#/")) {
+    return null;
+  }
+
+  const parts = ref
+    .slice(2)
+    .split("/")
+    .map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~"));
+
+  let current = root;
+
+  for (const part of parts) {
+    if (!isObject(current) && !Array.isArray(current)) {
+      return null;
+    }
+    current = current[part];
+    if (current === undefined) return null;
+  }
+
+  return current;
+}
+
+function resolveSchemaRef(schema, endpoint, seen = new Set()) {
+  if (!isObject(schema)) return schema;
+
+  if (schema.$ref && typeof schema.$ref === "string") {
+    if (seen.has(schema.$ref)) return schema;
+
+    seen.add(schema.$ref);
+
+    const rootDoc =
+      endpoint?._openapiDoc ||
+      endpoint?.openapiDoc ||
+      endpoint?.__openapiDoc ||
+      null;
+
+    if (!rootDoc) return schema;
+
+    const resolved = resolveJsonPointer(rootDoc, schema.$ref);
+    if (!resolved) return schema;
+
+    return resolveSchemaRef(resolved, endpoint, seen);
+  }
+
+  return schema;
+}
 
 function firstDefined(...values) {
   for (const v of values) {
@@ -202,7 +249,7 @@ function resolveValidPrimitive(schema = {}, fieldName = "") {
 
     case "string":
     default: {
-      let str = "sample";
+      let str = fieldName ? `<valid_${fieldName}>` : "sample";
 
       if (typeof schema.minLength === "number" && schema.minLength > 0) {
         str = "a".repeat(Math.max(schema.minLength, 1));
@@ -257,9 +304,25 @@ function resolveObjectSchema(schema = {}) {
       score: fieldSignalScore(name, propSchema || {}, required.has(name)),
     }))
     .sort((a, b) => b.score - a.score);
+  if (!isObject(schema.properties) && !Array.isArray(schema.required)) {
+    return {
+      value: { sample_field: "sample_value" },
+      source: "object-generic",
+    };
+  }
+  let chosen;
 
-  const chosen =
-    required.size > 0 ? ranked.filter((x) => x.required) : ranked.slice(0, 4);
+  if (required.size > 0) {
+    chosen = ranked.filter((x) => x.required);
+  } else {
+    // pick top scored fields with meaningful signal
+    chosen = ranked.filter((x) => x.score > 0).slice(0, 4);
+
+    // if still nothing meaningful, fallback to first few properties
+    if (chosen.length === 0) {
+      chosen = ranked.slice(0, 2);
+    }
+  }
 
   for (const item of chosen) {
     const resolved = resolveValidValue(item.schema, item.name);
@@ -272,8 +335,15 @@ function resolveObjectSchema(schema = {}) {
     out[first.name] = resolved.value;
   }
 
-  if (Object.keys(out).length === 0) {
-    return { value: {}, source: "object-empty" };
+  if (Object.keys(out).length === 0 && ranked.length > 0) {
+    const fallback = ranked.slice(0, 2);
+
+    for (const item of fallback) {
+      const resolved = resolveValidValue(item.schema, item.name);
+      out[item.name] = resolved.value;
+    }
+
+    return { value: out, source: "object-fallback" };
   }
 
   return { value: out, source: "object" };
@@ -467,6 +537,49 @@ function normalizeHeaderName(name = "") {
   if (lower === "authorization") return "Authorization";
   return name;
 }
+function getPreferredRequestBodyContent(requestBody) {
+  const content = requestBody?.content;
+  if (!isObject(content)) return null;
+
+  if (
+    requestBody?.preferredContentType &&
+    content[requestBody.preferredContentType]
+  ) {
+    return {
+      mediaType: requestBody.preferredContentType,
+      mediaDef: content[requestBody.preferredContentType],
+    };
+  }
+
+  if (content["application/json"]) {
+    return {
+      mediaType: "application/json",
+      mediaDef: content["application/json"],
+    };
+  }
+
+  if (content["application/*+json"]) {
+    return {
+      mediaType: "application/*+json",
+      mediaDef: content["application/*+json"],
+    };
+  }
+
+  for (const [mediaType, mediaDef] of Object.entries(content)) {
+    if (mediaDef?.schema && mediaType.toLowerCase().includes("json")) {
+      return { mediaType, mediaDef };
+    }
+  }
+
+  const first = Object.entries(content).find(
+    ([, mediaDef]) => mediaDef?.schema,
+  );
+  if (first) {
+    return { mediaType: first[0], mediaDef: first[1] };
+  }
+
+  return null;
+}
 
 export function resolveEndpointTestData(endpoint) {
   const result = {
@@ -551,30 +664,53 @@ export function resolveEndpointTestData(endpoint) {
   }
 
   if (!result.valid.headers["Content-Type"] && endpoint?.requestBody) {
+    const preferredBodyInfo = getPreferredRequestBodyContent(
+      endpoint.requestBody,
+    );
+
     result.valid.headers["Content-Type"] =
-      endpoint.requestBody.preferredContentType || "application/json";
+      preferredBodyInfo?.mediaType || "application/json";
     result.sourceMap["headers.Content-Type"] = "default_header";
   }
 
-  const preferredBodyType = endpoint?.requestBody?.preferredContentType;
-  result.body_style = preferredBodyType || undefined;
+  const preferredBodyInfo = getPreferredRequestBodyContent(
+    endpoint?.requestBody,
+  );
+  const preferredBodyType = preferredBodyInfo?.mediaType;
+  const preferredBody = preferredBodyInfo?.mediaDef;
 
-  const preferredBody = preferredBodyType
-    ? endpoint?.requestBody?.content?.[preferredBodyType]
-    : null;
+  result.body_style = preferredBodyType || undefined;
+  console.log(
+    "REQUEST BODY DEBUG:",
+    JSON.stringify(
+      {
+        path: endpoint?.path,
+        method: endpoint?.method,
+        preferredBodyType,
+        preferredBodySchema: preferredBody?.schema || null,
+        requestBody: endpoint?.requestBody || null,
+      },
+      null,
+      2,
+    ),
+  );
+  const resolvedRequestSchema = resolveSchemaRef(
+    preferredBody?.schema,
+    endpoint,
+  );
 
   const bodyExample = firstDefined(
     preferredBody?.example,
     pickExample(preferredBody),
-    pickExample(preferredBody?.schema),
+    pickExample(resolvedRequestSchema),
   );
 
   if (bodyExample !== undefined) {
     result.valid.body = clone(bodyExample);
     result.sourceMap.body = "request_body_example";
-  } else if (preferredBody?.schema) {
+  } else if (resolvedRequestSchema) {
     const resolvedBody = resolveValidValue(
-      preferredBody.schema,
+      resolvedRequestSchema,
       "request_body",
     );
     result.valid.body = resolvedBody.value;
@@ -671,7 +807,7 @@ export function resolveEndpointTestData(endpoint) {
 
   for (const bodyNeg of buildBodyRequiredFieldNegatives(
     result.valid.body,
-    preferredBody?.schema || {},
+    resolvedRequestSchema || {},
   )) {
     if (bodyNeg.kind === "body_missing_required_field") {
       result.negative.missingRequired.push({

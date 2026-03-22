@@ -6,6 +6,62 @@ function buildModuleName(endpoint) {
   return `${endpoint?.method || "API"} ${endpoint?.path || ""}`.trim();
 }
 
+function buildContractTitle(endpoint, scenario) {
+  const method = String(endpoint?.method || "GET").toUpperCase();
+  const path = endpoint?.path || "/";
+
+  const resource =
+    path
+      .split("/")
+      .filter(Boolean)
+      .filter((p) => !p.startsWith("{"))
+      .pop() || "resource";
+
+  const name = resource.replace(/[_-]+/g, " ");
+
+  if (scenario === "success") {
+    if (method === "GET") return `Retrieve ${name} successfully`;
+    if (method === "POST") return `Create ${name} successfully`;
+    if (method === "PUT" || method === "PATCH")
+      return `Update ${name} successfully`;
+    if (method === "DELETE") return `Delete ${name} successfully`;
+  }
+
+  if (scenario === "request_body") {
+    return `Submit valid ${name} payload successfully`;
+  }
+
+  if (scenario === "query_params") {
+    return `Process ${name} request with query parameters`;
+  }
+
+  if (scenario === "path_params") {
+    return `Process ${name} request with path parameters`;
+  }
+
+  if (scenario === "status_code") {
+    return `Return correct status code for ${name}`;
+  }
+
+  if (scenario === "content_type") {
+    return `Return correct content type for ${name}`;
+  }
+
+  if (scenario === "response_headers") {
+    return `Return expected headers for ${name}`;
+  }
+
+  if (scenario === "required_fields") {
+    return `Return required fields for ${name}`;
+  }
+
+  if (scenario === "error_response") {
+    return `Handle error responses correctly for ${name}`;
+  }
+
+  return `Process ${name} request successfully`;
+}
+
 function prettyValue(value) {
   if (value === null || value === undefined) return "null";
   if (typeof value === "string") return value;
@@ -327,8 +383,8 @@ function buildContractExpectedResults(endpoint, scenario) {
     return [
       `The API responds with HTTP ${successStatus}.`,
       `The response includes a Content-Type header matching '${contentType}' or a compatible JSON media type.`,
-      "When the endpoint returns a response body, the body is valid JSON.",
-      "The response structure matches the documented success contract.",
+      "Response body is valid JSON.",
+      "Response structure matches the API schema.",
       ...requiredFieldAssertions,
       ...responseAssertions,
       ...(topFields.length > 0 &&
@@ -589,7 +645,7 @@ export function makeContractSuccessTemplate(endpoint) {
   const path = endpoint?.path || "/";
 
   const tc = baseCase(endpoint, {
-    title: `Verify ${method} ${path} returns a valid success response`,
+    title: buildContractTitle(endpoint, "success"),
     objective:
       "Verify that the endpoint returns a successful response with the expected contract structure for a valid request.",
     priority: "P1",

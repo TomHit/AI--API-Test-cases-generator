@@ -14,17 +14,23 @@ const PRIORITY_RANK = {
 };
 
 function normalizeInclude(include) {
-  if (!Array.isArray(include) || include.length === 0) {
-    return DEFAULT_INCLUDE;
+  const normalized =
+    !Array.isArray(include) || include.length === 0
+      ? [...DEFAULT_INCLUDE]
+      : [
+          ...new Set(
+            include.map((x) => String(x).toLowerCase().trim()).filter(Boolean),
+          ),
+        ];
+
+  // Allow smoke/regression rules to flow through contract generation
+  if (normalized.includes("contract")) {
+    if (!normalized.includes("smoke")) normalized.push("smoke");
+    if (!normalized.includes("regression")) normalized.push("regression");
   }
 
-  return [
-    ...new Set(
-      include.map((x) => String(x).toLowerCase().trim()).filter(Boolean),
-    ),
-  ];
+  return normalized;
 }
-
 function normalizeMethod(method) {
   return String(method || "").toUpperCase();
 }

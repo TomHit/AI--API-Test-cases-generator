@@ -71,26 +71,27 @@ export async function getValidator() {
   }
 }
 
-export async function validateTestPlanOrThrow(obj) {
+export async function validateTestPlanOrThrow(plan) {
   const validate = await getValidator();
-  const ok = validate(obj);
 
-  if (!ok) {
-    const errors = (validate.errors || []).map((e) => ({
-      path: e.instancePath || "/",
-      message: e.message,
-      keyword: e.keyword,
-      params: e.params,
-      schemaPath: e.schemaPath,
-    }));
+  const valid = validate(plan);
 
-    const err = new Error("Schema validation failed");
-    err.details = {
-      schema: "test_plan.schema.json",
-      errors,
-    };
-    throw err;
-  }
+  if (valid) return true;
 
-  return true;
+  const errors = (validate.errors || []).map((err) => ({
+    instancePath: err.instancePath,
+    schemaPath: err.schemaPath,
+    keyword: err.keyword,
+    message: err.message,
+    params: err.params,
+  }));
+
+  console.error("Schema validation failed:\n", JSON.stringify(errors, null, 2));
+
+  const e = new Error("Schema validation failed");
+  e.details = {
+    schema: "test_plan.schema.json",
+    errors,
+  };
+  throw e;
 }

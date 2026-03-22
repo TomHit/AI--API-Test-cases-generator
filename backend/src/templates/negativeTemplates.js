@@ -2,6 +2,41 @@ function isObject(v) {
   return v && typeof v === "object" && !Array.isArray(v);
 }
 
+function buildNegativeTitle(endpoint, scenario) {
+  const path = endpoint?.path || "/";
+
+  const resource =
+    path
+      .split("/")
+      .filter(Boolean)
+      .filter((p) => !p.startsWith("{"))
+      .pop() || "resource";
+
+  const name = resource.replace(/[_-]+/g, " ");
+
+  const map = {
+    missing_query: "Reject request when required query parameter is missing",
+    missing_path: "Reject request with invalid or missing path parameter",
+    unsupported_method: `Reject unsupported HTTP method for ${name}`,
+    invalid_content_type: "Reject request with unsupported content type",
+    malformed_json: "Reject malformed JSON request",
+    empty_body: "Reject empty request body when payload is required",
+    not_found: `Return error for non-existent ${name}`,
+    invalid_type: "Reject invalid query parameter type",
+    invalid_enum: "Reject value outside allowed enum",
+    invalid_format: "Reject invalid formatted field value",
+    string_too_long: "Reject value exceeding maximum length",
+    numeric_above_max: "Reject value above allowed maximum",
+    additional_property: "Reject unexpected additional fields",
+    conflict: "Return conflict response for duplicate or invalid state",
+    rate_limit: "Return rate limit error when threshold is exceeded",
+    invalid_pagination: "Reject invalid pagination parameters",
+    null_required: "Reject null value for required field",
+  };
+
+  return map[scenario] || `Reject invalid request for ${name}`;
+}
+
 function buildModuleName(endpoint) {
   const tags = Array.isArray(endpoint?.tags) ? endpoint.tags : [];
   const firstTag = tags.find((tag) => String(tag || "").trim());
@@ -355,7 +390,7 @@ export function makeNegativeMissingRequiredQueryTemplate(endpoint) {
   const missingParamName = requiredQuery?.name || "required_query_param";
 
   const tc = baseNegativeCase(endpoint, {
-    title: `Verify ${method} ${path} rejects request when required query parameter is missing`,
+    title: buildNegativeTitle(endpoint, "missing_query"),
     objective:
       "Verify that the API rejects the request when a required query parameter is not provided.",
     priority: "high",
@@ -409,7 +444,7 @@ export function makeNegativeMissingRequiredPathTemplate(endpoint) {
   const missingParamName = requiredPath?.name || "required_path_param";
 
   const tc = baseNegativeCase(endpoint, {
-    title: `Verify ${method} ${path} rejects request when required path parameter is missing`,
+    title: buildNegativeTitle(endpoint, "missing_query"),
     objective:
       "Verify that the API rejects or fails safely when a required path parameter is omitted or malformed.",
     priority: "high",
