@@ -82,6 +82,7 @@ export default function TestCaseDrawer({ open, row, onClose }) {
   const testTypeTone = typeTone(row?.test_type);
   const httpTone = methodTone(row?.api_details?.method);
   const endpointInfo = endpointDisplay(row);
+  const drawerTitle = row?.title;
 
   return (
     <div style={styles.overlay} onClick={onClose}>
@@ -113,7 +114,7 @@ export default function TestCaseDrawer({ open, row, onClose }) {
             </div>
 
             <div style={styles.title}>{row?.id || "Test Case"}</div>
-            <div style={styles.sub}>{row?.title || ""}</div>
+            <div style={styles.sub}>{drawerTitle}</div>
           </div>
 
           <button style={styles.closeBtn} onClick={onClose} type="button">

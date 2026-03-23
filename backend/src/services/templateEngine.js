@@ -9,6 +9,24 @@ function firstItem(list) {
   return Array.isArray(list) && list.length > 0 ? list[0] : null;
 }
 
+function getReferenceByPrefix(tc, prefix) {
+  const refs = Array.isArray(tc?.references) ? tc.references : [];
+  return (
+    refs.find((x) =>
+      String(x || "")
+        .toLowerCase()
+        .startsWith(prefix.toLowerCase()),
+    ) || ""
+  );
+}
+
+function getTemplateKeyFromCase(tc) {
+  return getReferenceByPrefix(tc, "template_key:")
+    .replace(/^template_key:/i, "")
+    .trim()
+    .toLowerCase();
+}
+
 function firstByLocation(list, location) {
   const items = Array.isArray(list) ? list : [];
   return items.find((x) => x?.location === location) || items[0] || null;
@@ -1261,8 +1279,8 @@ function buildCaseFromCsvRule(rule, endpoint) {
 }
 
 async function resolveCsvRules(endpoint, options = {}) {
-  const { rules } = await evaluateRules(endpoint, options);
-  return rules;
+  const result = await evaluateRules(endpoint, options);
+  return Array.isArray(result) ? result : result?.rules || [];
 }
 
 /* ------------------ MAIN GENERATION ------------------ */
@@ -1293,19 +1311,13 @@ function buildDedupKey(tc) {
 
   const testType = normalizeDedupText(tc?.test_type);
 
-  const ruleRef = getReferenceValue(tc, "rule_id:");
-  const templateRef = getReferenceValue(tc, "template_key:");
-
-  // Best dedupe identity: same endpoint + same type + same originating rule/template
-  if (ruleRef || templateRef) {
-    return `${method}|${path}|${testType}|${ruleRef}|${templateRef}`;
-  }
-
-  // Fallback only if references are missing
   const title = normalizeDedupText(tc?.title);
   const objective = normalizeDedupText(tc?.objective);
 
-  return `${method}|${path}|${testType}|${title}|${objective}`;
+  // Include test data fingerprint for uniqueness
+  const testData = JSON.stringify(tc?.test_data || {});
+
+  return `${method}|${path}|${testType}|${title}|${objective}|${testData}`;
 }
 
 function dedupeCases(cases) {
@@ -1331,7 +1343,7 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
   const matchedRules = await resolveCsvRules(enrichedEndpoint, options);
   const cases = [];
 
-  for (const rule of matchedRules) {
+  for (const rule of Array.isArray(matchedRules) ? matchedRules : []) {
     try {
       const tc = buildCaseFromCsvRule(rule, enrichedEndpoint);
       if (tc) cases.push(tc);
@@ -1357,7 +1369,6 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
         .map((ref) => ref.replace("template_key:", "").toLowerCase()),
     );
 
-    // Add only missing templates
     for (const tc of autoNegativeCases) {
       const key = (tc.references || [])
         .find((r) => r.startsWith("template_key:"))
@@ -1366,6 +1377,7 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
 
       if (!key || !existingTemplateKeys.has(key)) {
         cases.push(tc);
+        if (key) existingTemplateKeys.add(key);
       }
     }
 
@@ -1377,11 +1389,12 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
 
       if (!key || !existingTemplateKeys.has(key)) {
         cases.push(tc);
+        if (key) existingTemplateKeys.add(key);
       }
     }
   }
 
-  return dedupeCases(cases);
+  return cases;
 }
 
 function isGenericTitle(value) {
@@ -1389,7 +1402,18 @@ function isGenericTitle(value) {
     .trim()
     .toLowerCase();
 
-  return !t || t.startsWith("verify");
+  const genericNegativeTitles = new Set([
+    "reject invalid request for login",
+    "reject request for login",
+    "invalid request for login",
+  ]);
+
+  return (
+    !t ||
+    t.startsWith("verify") ||
+    t.startsWith("validate") ||
+    genericNegativeTitles.has(t)
+  );
 }
 
 function formatGeneratedCase(tc, endpoint) {
@@ -1398,68 +1422,212 @@ function formatGeneratedCase(tc, endpoint) {
   const method = tc.api_details?.method || "GET";
   const path = tc.api_details?.path || "/";
   const testType = String(tc.test_type || "").toLowerCase();
+  const templateKey = getTemplateKeyFromCase(tc);
 
   /* ---------------- TITLE FIX ---------------- */
 
-  if (isGenericTitle(tc.title)) {
-    const cleanPath = String(path || "/").trim();
+  const cleanPath = String(path || "/").trim();
 
-    const resourceName =
-      cleanPath
-        .split("/")
-        .filter(Boolean)
-        .filter((part) => !part.startsWith("{") && !part.endsWith("}"))
-        .pop() || "resource";
+  const resourceName =
+    cleanPath
+      .split("/")
+      .filter(Boolean)
+      .filter((part) => !part.startsWith("{") && !part.endsWith("}"))
+      .pop() || "resource";
 
-    const readableResource = resourceName
-      .replace(/[_-]+/g, " ")
-      .replace(/\b\w/g, (ch) => ch.toUpperCase());
+  const readableResource = resourceName
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
 
+  const titleMap = {
+    "contract.success": cleanPath.includes("login")
+      ? "Login with valid credentials returns success response"
+      : `Successful response is returned for ${readableResource.toLowerCase()}`,
+
+    "contract.required_fields": cleanPath.includes("login")
+      ? "Validate required fields in login success response"
+      : `Validate required fields in ${readableResource.toLowerCase()} success response`,
+
+    "contract.status_code": cleanPath.includes("login")
+      ? "Validate login success status code"
+      : `Validate success status code for ${readableResource.toLowerCase()}`,
+
+    "contract.content_type": cleanPath.includes("login")
+      ? "Validate login response content type"
+      : `Validate response content type for ${readableResource.toLowerCase()}`,
+
+    "contract.response_headers": cleanPath.includes("login")
+      ? "Validate login response headers"
+      : `Validate response headers for ${readableResource.toLowerCase()}`,
+
+    "contract.query_params": cleanPath.includes("login")
+      ? "Validate login query parameter contract"
+      : `Validate query parameter contract for ${readableResource.toLowerCase()}`,
+
+    "contract.path_params": cleanPath.includes("login")
+      ? "Validate login path parameter contract"
+      : `Validate path parameter contract for ${readableResource.toLowerCase()}`,
+
+    "contract.request_body": cleanPath.includes("login")
+      ? "Validate login request body contract"
+      : `Validate request body contract for ${readableResource.toLowerCase()}`,
+
+    "contract.error_response": cleanPath.includes("login")
+      ? "Validate login error response contract"
+      : `Validate error response contract for ${readableResource.toLowerCase()}`,
+
+    "schema.response": cleanPath.includes("login")
+      ? "Validate login response schema"
+      : `Validate ${readableResource.toLowerCase()} response schema`,
+
+    "schema.request_body": cleanPath.includes("login")
+      ? "Validate login request body schema"
+      : `Validate ${readableResource.toLowerCase()} request body schema`,
+
+    "schema.required_fields": cleanPath.includes("login")
+      ? "Validate required fields in login response"
+      : `Validate required fields in ${readableResource.toLowerCase()} response`,
+
+    "schema.field_types": cleanPath.includes("login")
+      ? "Validate data types in login response"
+      : `Validate field types in ${readableResource.toLowerCase()} response`,
+
+    "schema.enum": cleanPath.includes("login")
+      ? "Validate enum values in login response"
+      : `Validate enum values in ${readableResource.toLowerCase()} response`,
+
+    "schema.nested_objects": cleanPath.includes("login")
+      ? "Validate nested objects in login response"
+      : `Validate nested objects in ${readableResource.toLowerCase()} response`,
+
+    "schema.array": cleanPath.includes("login")
+      ? "Validate array fields in login response"
+      : `Validate array fields in ${readableResource.toLowerCase()} response`,
+
+    "schema.format": cleanPath.includes("login")
+      ? "Validate field formats in login response"
+      : `Validate field formats in ${readableResource.toLowerCase()} response`,
+
+    "schema.numeric_constraints": cleanPath.includes("login")
+      ? "Validate numeric constraints in login response"
+      : `Validate numeric constraints in ${readableResource.toLowerCase()} response`,
+
+    "schema.string_constraints": cleanPath.includes("login")
+      ? "Validate string constraints in login response"
+      : `Validate string constraints in ${readableResource.toLowerCase()} response`,
+
+    "schema.pattern": cleanPath.includes("login")
+      ? "Validate pattern-based fields in login response"
+      : `Validate pattern-based fields in ${readableResource.toLowerCase()} response`,
+
+    "schema.composition": cleanPath.includes("login")
+      ? "Validate composed schema in login response"
+      : `Validate composed schema in ${readableResource.toLowerCase()} response`,
+
+    "negative.missing_required_query": cleanPath.includes("login")
+      ? "Reject login request with missing required query parameters"
+      : `Reject request for ${readableResource.toLowerCase()} with missing required query parameters`,
+
+    "negative.missing_required_path": cleanPath.includes("login")
+      ? "Reject login request with missing required path parameters"
+      : `Reject request for ${readableResource.toLowerCase()} with missing required path parameters`,
+
+    "negative.invalid_query_type": cleanPath.includes("login")
+      ? "Reject login request with invalid query parameter type"
+      : `Reject request for ${readableResource.toLowerCase()} with invalid query parameter type`,
+
+    "negative.invalid_enum": cleanPath.includes("login")
+      ? "Reject login request with invalid enum value"
+      : `Reject request for ${readableResource.toLowerCase()} with invalid enum value`,
+
+    "negative.invalid_format": cleanPath.includes("login")
+      ? "Reject login request with invalid field format"
+      : `Reject request for ${readableResource.toLowerCase()} with invalid field format`,
+
+    "negative.string_too_long": cleanPath.includes("login")
+      ? "Reject login request when string length exceeds limit"
+      : `Reject request for ${readableResource.toLowerCase()} when string length exceeds limit`,
+
+    "negative.numeric_above_maximum": cleanPath.includes("login")
+      ? "Reject login request when numeric value exceeds maximum"
+      : `Reject request for ${readableResource.toLowerCase()} when numeric value exceeds maximum`,
+
+    "negative.additional_property": cleanPath.includes("login")
+      ? "Reject login request with unsupported additional property"
+      : `Reject request for ${readableResource.toLowerCase()} with unsupported additional property`,
+
+    "negative.conflict": cleanPath.includes("login")
+      ? "Return conflict for duplicate or invalid login state"
+      : `Return conflict for ${readableResource.toLowerCase()} when resource state prevents operation`,
+
+    "negative.rate_limit": cleanPath.includes("login")
+      ? "Rate limit repeated login attempts"
+      : `Rate limit repeated requests for ${readableResource.toLowerCase()}`,
+
+    "negative.invalid_pagination": cleanPath.includes("login")
+      ? "Reject login request with invalid pagination values"
+      : `Reject request for ${readableResource.toLowerCase()} with invalid pagination values`,
+
+    "negative.null_required_field": cleanPath.includes("login")
+      ? "Reject login request when required field is null"
+      : `Reject request for ${readableResource.toLowerCase()} when required field is null`,
+
+    "negative.invalid_content_type": cleanPath.includes("login")
+      ? "Reject login request with unsupported content type"
+      : `Reject request for ${readableResource.toLowerCase()} with unsupported content type`,
+
+    "negative.malformed_json": cleanPath.includes("login")
+      ? "Reject login request with malformed JSON body"
+      : `Reject request for ${readableResource.toLowerCase()} with malformed JSON body`,
+
+    "negative.empty_body": cleanPath.includes("login")
+      ? "Reject login request with empty body"
+      : `Reject request for ${readableResource.toLowerCase()} with empty body`,
+
+    "negative.resource_not_found": cleanPath.includes("login")
+      ? "Return not found for invalid login resource identifier"
+      : `Return not found for invalid ${readableResource.toLowerCase()} resource identifier`,
+
+    "negative.unsupported_method": cleanPath.includes("login")
+      ? "Reject unsupported HTTP method on login endpoint"
+      : `Reject unsupported HTTP method on ${readableResource.toLowerCase()} endpoint`,
+
+    "auth.missing_credentials": cleanPath.includes("login")
+      ? "Reject login-related request without authentication credentials"
+      : `Reject ${readableResource.toLowerCase()} request without authentication credentials`,
+
+    "auth.invalid_credentials": cleanPath.includes("login")
+      ? "Reject login request with invalid authentication credentials"
+      : `Reject ${readableResource.toLowerCase()} request with invalid authentication credentials`,
+
+    "auth.expired_credentials": cleanPath.includes("login")
+      ? "Reject login request with expired authentication credentials"
+      : `Reject ${readableResource.toLowerCase()} request with expired authentication credentials`,
+
+    "auth.forbidden_role": cleanPath.includes("login")
+      ? "Reject login-related request for insufficient role permissions"
+      : `Reject ${readableResource.toLowerCase()} request for insufficient role permissions`,
+  };
+
+  if (titleMap[templateKey]) {
+    tc.title = titleMap[templateKey];
+  } else if (isGenericTitle(tc.title)) {
     if (testType === "contract") {
-      if (method === "GET") {
-        if (cleanPath.includes("opportunities")) {
-          tc.title = "Retrieve trend opportunities successfully";
-        } else if (cleanPath.includes("login")) {
-          tc.title = "Login request returns success response";
-        } else if (cleanPath.includes("auth/me")) {
-          tc.title = "Retrieve authenticated user details successfully";
-        } else {
-          tc.title = `Retrieve ${readableResource.toLowerCase()} successfully`;
-        }
-      } else if (method === "POST") {
-        if (cleanPath.includes("login")) {
-          tc.title = "Login with valid credentials returns success response";
-        } else {
-          tc.title = `Create ${readableResource.toLowerCase()} successfully`;
-        }
-      } else if (method === "PUT" || method === "PATCH") {
-        tc.title = `Update ${readableResource.toLowerCase()} successfully`;
-      } else if (method === "DELETE") {
-        tc.title = `Delete ${readableResource.toLowerCase()} successfully`;
-      } else {
-        tc.title = `Process ${readableResource.toLowerCase()} successfully`;
-      }
+      tc.title =
+        method === "POST"
+          ? `Create ${readableResource.toLowerCase()} successfully`
+          : `Retrieve ${readableResource.toLowerCase()} successfully`;
     } else if (testType === "negative") {
-      if (cleanPath.includes("login")) {
-        tc.title = "Reject login request with invalid input";
-      } else if (method === "GET") {
-        tc.title = `Reject invalid request for ${readableResource.toLowerCase()} retrieval`;
-      } else {
-        tc.title = `Reject request for ${readableResource.toLowerCase()} when input is invalid`;
-      }
+      tc.title = `Reject invalid request for ${readableResource.toLowerCase()}`;
     } else if (testType === "schema") {
-      if (cleanPath.includes("auth/me")) {
-        tc.title = "Validate authenticated user response schema";
-      } else {
-        tc.title = `Validate ${readableResource.toLowerCase()} response schema`;
-      }
+      tc.title = `Validate ${readableResource.toLowerCase()} response schema`;
+    } else if (testType === "auth") {
+      tc.title = `Validate authentication rules for ${readableResource.toLowerCase()}`;
     }
   }
-
   /* ---------------- STEPS FIX ---------------- */
 
   const steps = [];
-  const cleanPath = String(path || "/").trim();
 
   const hasHeaders =
     tc.test_data?.headers && Object.keys(tc.test_data.headers).length > 0;
@@ -1494,11 +1662,32 @@ function formatGeneratedCase(tc, endpoint) {
     if (hasPathParams) steps.push("Provide valid path parameter values.");
     if (hasQueryParams) steps.push("Provide required query parameter values.");
 
-    steps.push(sendStep);
-    steps.push("Capture the response body.");
-    steps.push(
-      "Validate the response structure against the documented schema.",
-    );
+    if (templateKey === "schema.request_body") {
+      steps.push("Prepare a valid request body using documented fields.");
+      steps.push(sendStep);
+      steps.push(
+        "Validate the request payload structure against the documented schema before execution.",
+      );
+    } else {
+      steps.push(sendStep);
+      steps.push("Capture the response body.");
+
+      if (templateKey === "schema.response") {
+        steps.push(
+          "Validate the overall response structure against the documented schema.",
+        );
+      } else if (templateKey === "schema.required_fields") {
+        steps.push("Verify that all required response fields are present.");
+      } else if (templateKey === "schema.field_types") {
+        steps.push(
+          "Verify that response field data types match the documented schema.",
+        );
+      } else {
+        steps.push(
+          "Validate the response structure against the documented schema.",
+        );
+      }
+    }
   } else if (testType === "negative") {
     steps.push(`Set HTTP method to ${method}.`);
     steps.push(`Use endpoint path: ${cleanPath}.`);
@@ -1506,11 +1695,109 @@ function formatGeneratedCase(tc, endpoint) {
     if (hasHeaders) steps.push("Add required headers.");
     if (hasPathParams) steps.push("Provide valid path parameter values.");
     if (hasQueryParams) steps.push("Provide required query parameter values.");
-    if (hasBody) steps.push("Provide a valid request body first.");
+    if (hasBody) steps.push("Prepare a valid request body first.");
 
-    steps.push(
-      "Modify the request with invalid, unsupported, or missing input.",
-    );
+    if (templateKey === "negative.missing_required_query") {
+      steps.push("Remove one or more required query parameters.");
+    } else if (templateKey === "negative.missing_required_path") {
+      steps.push("Remove or omit a required path parameter.");
+    } else if (templateKey === "negative.invalid_query_type") {
+      steps.push("Set a query parameter to an invalid data type.");
+    } else if (templateKey === "negative.invalid_enum") {
+      steps.push("Set an enum field to an unsupported value.");
+    } else if (templateKey === "negative.invalid_format") {
+      steps.push("Set a field to an invalid format.");
+    } else if (templateKey === "negative.string_too_long") {
+      steps.push("Set a string field longer than the allowed maximum length.");
+    } else if (templateKey === "negative.numeric_above_maximum") {
+      steps.push("Set a numeric field above the allowed maximum value.");
+    } else if (templateKey === "negative.additional_property") {
+      steps.push("Add an unsupported extra property to the request.");
+    } else if (templateKey === "negative.conflict") {
+      steps.push(
+        "Repeat or modify the request to trigger a conflict condition.",
+      );
+    } else if (templateKey === "negative.rate_limit") {
+      steps.push("Send repeated requests rapidly to trigger rate limiting.");
+    } else if (templateKey === "negative.invalid_pagination") {
+      steps.push("Set pagination fields to invalid values.");
+    } else if (templateKey === "negative.null_required_field") {
+      steps.push("Set a required field to null.");
+    } else if (templateKey === "negative.invalid_content_type") {
+      steps.push("Set the Content-Type header to an unsupported value.");
+    } else if (templateKey === "negative.malformed_json") {
+      steps.push("Send a malformed JSON request body.");
+    } else if (templateKey === "negative.empty_body") {
+      steps.push("Remove the required request body.");
+    } else if (templateKey === "negative.resource_not_found") {
+      steps.push("Use a non-existent resource identifier.");
+    } else if (templateKey === "negative.unsupported_method") {
+      steps.push("Call the endpoint using an unsupported HTTP method.");
+    } else {
+      steps.push(
+        "Modify the request with invalid, unsupported, or missing input.",
+      );
+    }
+
+    steps.push(sendStep);
+  } else if (testType === "contract") {
+    steps.push(`Set HTTP method to ${method}.`);
+    steps.push(`Use endpoint path: ${cleanPath}.`);
+
+    if (hasHeaders) steps.push("Add required headers.");
+    if (hasPathParams) steps.push("Provide valid path parameter values.");
+    if (hasQueryParams) steps.push("Provide required query parameter values.");
+    if (hasBody) steps.push("Provide request body with required fields.");
+
+    steps.push(sendStep);
+
+    if (templateKey === "contract.success") {
+      steps.push("Verify that the request is accepted successfully.");
+    } else if (templateKey === "contract.status_code") {
+      steps.push(
+        "Verify that the returned HTTP status code matches the documented success status.",
+      );
+    } else if (templateKey === "contract.required_fields") {
+      steps.push(
+        "Verify that the documented required response fields are present.",
+      );
+    } else if (templateKey === "contract.content_type") {
+      steps.push(
+        "Verify that the response content type matches the API contract.",
+      );
+    } else if (templateKey === "contract.response_headers") {
+      steps.push("Verify that documented response headers are present.");
+    } else if (templateKey === "contract.request_body") {
+      steps.push(
+        "Verify that the request body structure matches the documented contract.",
+      );
+    } else if (templateKey === "contract.query_params") {
+      steps.push("Verify that query parameters are supported as documented.");
+    } else if (templateKey === "contract.path_params") {
+      steps.push("Verify that path parameters are supported as documented.");
+    } else if (templateKey === "contract.error_response") {
+      steps.push(
+        "Verify that documented error response definitions exist for this endpoint.",
+      );
+    }
+  } else if (testType === "auth") {
+    steps.push(`Set HTTP method to ${method}.`);
+    steps.push(`Use endpoint path: ${cleanPath}.`);
+
+    if (hasPathParams) steps.push("Provide valid path parameter values.");
+    if (hasQueryParams) steps.push("Provide required query parameter values.");
+    if (hasBody) steps.push("Provide request body with required fields.");
+
+    if (templateKey === "auth.missing_credentials") {
+      steps.push("Do not send authentication credentials.");
+    } else if (templateKey === "auth.invalid_credentials") {
+      steps.push("Send invalid authentication credentials.");
+    } else if (templateKey === "auth.expired_credentials") {
+      steps.push("Send expired authentication credentials.");
+    } else if (templateKey === "auth.forbidden_role") {
+      steps.push("Send valid credentials with insufficient permissions.");
+    }
+
     steps.push(sendStep);
   } else {
     steps.push(`Set HTTP method to ${method}.`);
@@ -1531,69 +1818,153 @@ function formatGeneratedCase(tc, endpoint) {
   const expected = [];
 
   if (testType === "contract") {
-    if (method === "GET") {
-      if (cleanPath.includes("opportunities")) {
-        expected.push("API returns HTTP 200.");
-        expected.push("Response contains a list of trend opportunities.");
-        expected.push("Each item follows the documented response structure.");
-      } else if (cleanPath.includes("auth/me")) {
-        expected.push("API returns HTTP 200.");
-        expected.push("Response contains authenticated user details.");
-        expected.push("Response body is valid JSON.");
-      } else {
-        expected.push("API returns HTTP 200.");
-        expected.push("Response contains the expected resource data.");
-        expected.push("Response body is valid JSON.");
-      }
-    } else if (method === "POST") {
-      if (cleanPath.includes("login")) {
-        expected.push("API returns HTTP 200.");
-        expected.push(
-          "Response contains authentication success details such as token or session information.",
-        );
-        expected.push("Response body is valid JSON.");
-      } else {
-        expected.push("API returns HTTP 200 or 201.");
-        expected.push(
-          "Response confirms the request was processed successfully.",
-        );
-        expected.push("Response body is valid JSON.");
-      }
-    } else if (method === "DELETE") {
-      expected.push("API returns a successful deletion response.");
-      expected.push("Requested resource is deleted or marked as removed.");
+    if (templateKey === "contract.success") {
+      expected.push("API returns the documented success response.");
+      expected.push("Response is valid for a correct request.");
+    } else if (templateKey === "contract.status_code") {
+      expected.push("HTTP status code matches the documented success status.");
+    } else if (templateKey === "contract.required_fields") {
+      expected.push("All documented required response fields are present.");
+    } else if (templateKey === "contract.content_type") {
+      expected.push("Response content type matches the API specification.");
+    } else if (templateKey === "contract.response_headers") {
+      expected.push("Documented response headers are present in the response.");
+    } else if (templateKey === "contract.request_body") {
+      expected.push(
+        "Request body is accepted when it matches the documented contract.",
+      );
+    } else if (templateKey === "contract.query_params") {
+      expected.push(
+        "Documented query parameters are accepted and handled correctly.",
+      );
+    } else if (templateKey === "contract.path_params") {
+      expected.push(
+        "Documented path parameters are accepted and handled correctly.",
+      );
+    } else if (templateKey === "contract.error_response") {
+      expected.push(
+        "Error responses are documented for applicable failure scenarios.",
+      );
     } else {
-      expected.push("API returns a successful response.");
-      expected.push("Response reflects the requested operation outcome.");
+      expected.push("API behavior matches the documented contract.");
     }
   }
 
   if (testType === "negative") {
-    if (cleanPath.includes("login")) {
-      expected.push("API rejects the login request.");
+    if (templateKey === "negative.missing_required_query") {
       expected.push(
-        "Error response indicates invalid, missing, or unsupported input.",
+        "API rejects the request because required query parameters are missing.",
       );
-      expected.push("No authentication token or session is created.");
-    } else {
-      expected.push("API rejects the request.");
-      expected.push("Appropriate client error status code is returned (4xx).");
+      expected.push("Client error response is returned.");
+    } else if (templateKey === "negative.missing_required_path") {
       expected.push(
-        "Error response clearly indicates invalid, missing, or unsupported input.",
+        "API rejects the request because required path parameters are missing.",
+      );
+      expected.push("Client error response is returned.");
+    } else if (templateKey === "negative.invalid_query_type") {
+      expected.push(
+        "API rejects the request because a query parameter has an invalid type.",
+      );
+    } else if (templateKey === "negative.invalid_enum") {
+      expected.push(
+        "API rejects the request because an enum field has an unsupported value.",
+      );
+    } else if (templateKey === "negative.invalid_format") {
+      expected.push(
+        "API rejects the request because one or more fields have invalid format.",
+      );
+    } else if (templateKey === "negative.string_too_long") {
+      expected.push(
+        "API rejects the request because a string field exceeds the allowed length.",
+      );
+    } else if (templateKey === "negative.numeric_above_maximum") {
+      expected.push(
+        "API rejects the request because a numeric field exceeds the maximum allowed value.",
+      );
+    } else if (templateKey === "negative.additional_property") {
+      expected.push(
+        "API rejects the request because it contains unsupported additional properties.",
+      );
+    } else if (templateKey === "negative.conflict") {
+      expected.push(
+        "API returns conflict because the operation cannot be completed in the current resource state.",
+      );
+    } else if (templateKey === "negative.rate_limit") {
+      expected.push("API rate limits excessive repeated requests.");
+    } else if (templateKey === "negative.invalid_pagination") {
+      expected.push(
+        "API rejects the request because pagination values are invalid.",
+      );
+    } else if (templateKey === "negative.null_required_field") {
+      expected.push(
+        "API rejects the request because a required field is null.",
+      );
+    } else if (templateKey === "negative.invalid_content_type") {
+      expected.push(
+        "API rejects the request because the content type is unsupported.",
+      );
+    } else if (templateKey === "negative.malformed_json") {
+      expected.push(
+        "API rejects the request because the JSON body is malformed.",
+      );
+    } else if (templateKey === "negative.empty_body") {
+      expected.push(
+        "API rejects the request because the required request body is missing.",
+      );
+    } else if (templateKey === "negative.resource_not_found") {
+      expected.push(
+        "API returns not found for an invalid resource identifier.",
+      );
+    } else if (templateKey === "negative.unsupported_method") {
+      expected.push("API rejects unsupported HTTP methods for this endpoint.");
+    } else {
+      expected.push(
+        "API rejects the request with an appropriate client error response.",
+      );
+    }
+  }
+  if (testType === "auth") {
+    if (templateKey === "auth.missing_credentials") {
+      expected.push(
+        "API rejects the request because authentication credentials are missing.",
+      );
+      expected.push("Unauthorized response is returned.");
+    } else if (templateKey === "auth.invalid_credentials") {
+      expected.push(
+        "API rejects the request because authentication credentials are invalid.",
+      );
+      expected.push("Unauthorized response is returned.");
+    } else if (templateKey === "auth.expired_credentials") {
+      expected.push(
+        "API rejects the request because authentication credentials are expired.",
+      );
+      expected.push("Unauthorized response is returned.");
+    } else if (templateKey === "auth.forbidden_role") {
+      expected.push(
+        "API rejects the request because the user does not have sufficient permissions.",
+      );
+      expected.push("Forbidden response is returned.");
+    } else {
+      expected.push(
+        "API enforces authentication and authorization rules correctly.",
       );
     }
   }
 
   if (testType === "schema") {
-    if (cleanPath.includes("auth/me")) {
-      expected.push("API returns HTTP 200.");
-      expected.push("Response contains authenticated user details.");
-      expected.push("All required schema fields are present.");
-      expected.push("Field data types match the documented schema.");
+    if (templateKey === "schema.request_body") {
+      expected.push("Request body matches the documented schema.");
+      expected.push("All required request fields are present.");
+      expected.push("Request field data types match the schema definition.");
+    } else if (templateKey === "schema.response") {
+      expected.push("Response matches the documented schema.");
+      expected.push("Response structure is valid.");
+    } else if (templateKey === "schema.required_fields") {
+      expected.push("All required response fields are present.");
+    } else if (templateKey === "schema.field_types") {
+      expected.push("Response field data types match the schema definition.");
     } else {
       expected.push("Response matches the documented schema.");
-      expected.push("All required fields are present.");
-      expected.push("Field data types match the schema definition.");
     }
   }
 

@@ -661,9 +661,9 @@ export default function GeneratorPage({
                                 <td style={styles.tdMono}>{row.id || "-"}</td>
                                 <td
                                   style={styles.tdTitle}
-                                  title={row.objective || row.title || "-"}
+                                  title={row.title || "-"}
                                 >
-                                  {row.objective || row.title || "-"}
+                                  {row.title || "-"}
                                 </td>
                                 <td style={styles.td}>
                                   {row.test_type || "-"}

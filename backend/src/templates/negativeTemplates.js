@@ -17,24 +17,36 @@ function buildNegativeTitle(endpoint, scenario) {
   const map = {
     missing_query: "Reject request when required query parameter is missing",
     missing_path: "Reject request with invalid or missing path parameter",
-    unsupported_method: `Reject unsupported HTTP method for ${name}`,
-    invalid_content_type: "Reject request with unsupported content type",
-    malformed_json: "Reject malformed JSON request",
-    empty_body: "Reject empty request body when payload is required",
-    not_found: `Return error for non-existent ${name}`,
-    invalid_type: "Reject invalid query parameter type",
+
+    invalid_query_type: "Reject request with invalid query parameter type",
     invalid_enum: "Reject value outside allowed enum",
     invalid_format: "Reject invalid formatted field value",
+
     string_too_long: "Reject value exceeding maximum length",
-    numeric_above_max: "Reject value above allowed maximum",
+    numeric_above_maximum: "Reject value above allowed maximum",
+
     additional_property: "Reject unexpected additional fields",
     conflict: "Return conflict response for duplicate or invalid state",
     rate_limit: "Return rate limit error when threshold is exceeded",
-    invalid_pagination: "Reject invalid pagination parameters",
-    null_required: "Reject null value for required field",
-  };
 
-  return map[scenario] || `Reject invalid request for ${name}`;
+    invalid_pagination: "Reject invalid pagination parameters",
+    null_required_field: "Reject null value for required field",
+
+    invalid_content_type: "Reject request with unsupported content type",
+    malformed_json: "Reject malformed JSON request",
+    empty_body: "Reject empty request body when payload is required",
+
+    resource_not_found: `Return error for non-existent ${name}`,
+    unsupported_method: `Reject unsupported HTTP method for ${name}`,
+  };
+  if (map[scenario]) {
+    return map[scenario];
+  }
+
+  console.warn("UNKNOWN NEGATIVE SCENARIO:", scenario, "for", endpoint?.path);
+
+  // Fallback should still be unique, not generic
+  return `Reject ${name} request for scenario: ${scenario}`;
 }
 
 function buildModuleName(endpoint) {
