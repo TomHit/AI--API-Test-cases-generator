@@ -10,6 +10,22 @@ function normalizeMethod(m) {
   return String(m || "GET").toUpperCase();
 }
 
+function addTemplateReference(tc, templateKey, extraRefs = []) {
+  const refs = Array.isArray(tc?.references) ? tc.references : [];
+  const filtered = refs.filter(
+    (r) =>
+      !String(r || "")
+        .toLowerCase()
+        .startsWith("template_key:"),
+  );
+
+  tc.references = templateKey
+    ? [`template_key:${templateKey}`, ...filtered, ...extraRefs]
+    : [...filtered, ...extraRefs];
+
+  return tc;
+}
+
 function buildTooLongValue(fieldSchema = {}) {
   const maxLen =
     typeof fieldSchema.maxLength === "number" ? fieldSchema.maxLength : 100;
@@ -180,7 +196,7 @@ function generateBodyNegativeCases(endpoint, schema) {
   for (const field of requiredFields) {
     const tc = buildBaseCase(
       endpoint,
-      `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects request when required field '${field}' is missing`,
+      `Request is rejected when required field '${field}' is missing`,
       `Verify that the endpoint rejects a request body when the required field '${field}' is omitted.`,
     );
 
@@ -198,14 +214,17 @@ function generateBodyNegativeCases(endpoint, schema) {
       "Negative validation",
       field,
     ];
-    tc.references.push(`negative:missing_required:${field}`);
+    addTemplateReference(tc, "", [
+      `source_negative:missing_required:${field}`,
+      `field:${field}`,
+    ]);
     cases.push(tc);
   }
 
   for (const [field, fieldSchema] of Object.entries(props)) {
     const tc = buildBaseCase(
       endpoint,
-      `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects invalid type for field '${field}'`,
+      `Request is rejected when field '${field}' has an invalid type`,
       `Verify that the endpoint rejects the request when field '${field}' has an invalid data type.`,
     );
 
@@ -219,13 +238,16 @@ function generateBodyNegativeCases(endpoint, schema) {
       "The API does not accept schema-invalid input.",
     ];
     tc.validation_focus = ["Type validation", "Negative validation", field];
-    tc.references.push(`negative:wrong_type:${field}`);
+    addTemplateReference(tc, "", [
+      `source_negative:wrong_type:${field}`,
+      `field:${field}`,
+    ]);
     cases.push(tc);
 
     if (Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0) {
       const enumTc = buildBaseCase(
         endpoint,
-        `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects invalid enum value for field '${field}'`,
+        `Request is rejected when field '${field}' uses an invalid enum value`,
         `Verify that the endpoint rejects the request when field '${field}' uses a value outside the documented enum.`,
       );
 
@@ -243,14 +265,17 @@ function generateBodyNegativeCases(endpoint, schema) {
         "Negative validation",
         field,
       ];
-      enumTc.references.push(`negative:invalid_enum:${field}`);
+      addTemplateReference(enumTc, "negative.invalid_enum", [
+        `source_negative:invalid_enum:${field}`,
+        `field:${field}`,
+      ]);
       cases.push(enumTc);
     }
 
     if (typeof fieldSchema.maxLength === "number") {
       const maxTc = buildBaseCase(
         endpoint,
-        `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects overlength value for field '${field}'`,
+        `Request is rejected when field '${field}' exceeds maximum length`,
         `Verify that the endpoint rejects the request when field '${field}' exceeds the maximum allowed length.`,
       );
 
@@ -269,14 +294,17 @@ function generateBodyNegativeCases(endpoint, schema) {
         "Maximum length enforcement",
         field,
       ];
-      maxTc.references.push(`negative:max_length:${field}`);
+      addTemplateReference(maxTc, "negative.string_too_long", [
+        `source_negative:max_length:${field}`,
+        `field:${field}`,
+      ]);
       cases.push(maxTc);
     }
 
     if (typeof fieldSchema.minLength === "number") {
       const minTc = buildBaseCase(
         endpoint,
-        `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects undersized value for field '${field}'`,
+        `Request is rejected when field '${field}' is shorter than minimum length`,
         `Verify that the endpoint rejects the request when field '${field}' is shorter than the minimum allowed length.`,
       );
 
@@ -295,7 +323,10 @@ function generateBodyNegativeCases(endpoint, schema) {
         "Minimum length enforcement",
         field,
       ];
-      minTc.references.push(`negative:min_length:${field}`);
+      addTemplateReference(minTc, "", [
+        `source_negative:min_length:${field}`,
+        `field:${field}`,
+      ]);
       cases.push(minTc);
     }
 
@@ -307,7 +338,7 @@ function generateBodyNegativeCases(endpoint, schema) {
     ) {
       const formatTc = buildBaseCase(
         endpoint,
-        `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects invalid format for field '${field}'`,
+        `Request is rejected when field '${field}' has an invalid format`,
         `Verify that the endpoint rejects the request when field '${field}' has an invalid format.`,
       );
 
@@ -325,14 +356,17 @@ function generateBodyNegativeCases(endpoint, schema) {
         "Negative validation",
         field,
       ];
-      formatTc.references.push(`negative:invalid_format:${field}`);
+      addTemplateReference(formatTc, "negative.invalid_format", [
+        `source_negative:invalid_format:${field}`,
+        `field:${field}`,
+      ]);
       cases.push(formatTc);
     }
 
     if (typeof fieldSchema.minimum === "number") {
       const minNumTc = buildBaseCase(
         endpoint,
-        `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects below-minimum value for field '${field}'`,
+        `Request is rejected when field '${field}' is below the minimum value`,
         `Verify that the endpoint rejects the request when field '${field}' is below the minimum allowed value.`,
       );
 
@@ -350,14 +384,17 @@ function generateBodyNegativeCases(endpoint, schema) {
         "Negative validation",
         field,
       ];
-      minNumTc.references.push(`negative:minimum:${field}`);
+      addTemplateReference(minNumTc, "", [
+        `source_negative:minimum:${field}`,
+        `field:${field}`,
+      ]);
       cases.push(minNumTc);
     }
 
     if (typeof fieldSchema.maximum === "number") {
       const maxNumTc = buildBaseCase(
         endpoint,
-        `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects above-maximum value for field '${field}'`,
+        `Request is rejected when field '${field}' exceeds the maximum value`,
         `Verify that the endpoint rejects the request when field '${field}' is above the maximum allowed value.`,
       );
 
@@ -375,7 +412,10 @@ function generateBodyNegativeCases(endpoint, schema) {
         "Negative validation",
         field,
       ];
-      maxNumTc.references.push(`negative:maximum:${field}`);
+      addTemplateReference(maxNumTc, "negative.numeric_above_maximum", [
+        `source_negative:maximum:${field}`,
+        `field:${field}`,
+      ]);
       cases.push(maxNumTc);
     }
   }
@@ -383,7 +423,7 @@ function generateBodyNegativeCases(endpoint, schema) {
   if (Object.keys(props).length > 0) {
     const tc = buildBaseCase(
       endpoint,
-      `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects unexpected extra request fields`,
+      `Request is rejected for unexpected extra request fields`,
       "Verify that the endpoint handles or rejects additional unexpected fields in the request body according to the contract.",
     );
 
@@ -396,7 +436,9 @@ function generateBodyNegativeCases(endpoint, schema) {
       "No unintended success behavior occurs because of extra request fields.",
     ];
     tc.validation_focus = ["Additional field handling", "Negative validation"];
-    tc.references.push("negative:unexpected_field");
+    addTemplateReference(tc, "negative.additional_property", [
+      "source_negative:unexpected_field",
+    ]);
     tc.needs_review = true;
     tc.review_notes =
       "Review whether the API contract allows additionalProperties or silently ignores extra fields.";
@@ -405,6 +447,7 @@ function generateBodyNegativeCases(endpoint, schema) {
 
   return cases;
 }
+
 function generateParamNegativeCases(endpoint) {
   const cases = [];
   const queryParams = ensureArray(endpoint?.params?.query);
@@ -414,7 +457,7 @@ function generateParamNegativeCases(endpoint) {
   for (const p of queryParams.filter((x) => x?.required)) {
     const tc = buildBaseCase(
       endpoint,
-      `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects request when required query parameter '${p.name}' is missing`,
+      `Request is rejected when required query parameter '${p.name}' is missing`,
       `Verify that the endpoint rejects the request when required query parameter '${p.name}' is not provided.`,
     );
     tc.expected_results = [
@@ -426,14 +469,17 @@ function generateParamNegativeCases(endpoint) {
       "Negative validation",
       p.name,
     ];
-    tc.references.push(`negative:missing_query:${p.name}`);
+    addTemplateReference(tc, "negative.missing_required_query", [
+      `source_negative:missing_query:${p.name}`,
+      `field:${p.name}`,
+    ]);
     cases.push(tc);
   }
 
   for (const p of headerParams.filter((x) => x?.required)) {
     const tc = buildBaseCase(
       endpoint,
-      `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} rejects request when required header '${p.name}' is missing`,
+      `Request is rejected when required header '${p.name}' is missing`,
       `Verify that the endpoint rejects the request when required header '${p.name}' is not provided.`,
     );
     tc.expected_results = [
@@ -445,14 +491,17 @@ function generateParamNegativeCases(endpoint) {
       "Negative validation",
       p.name,
     ];
-    tc.references.push(`negative:missing_header:${p.name}`);
+    addTemplateReference(tc, "", [
+      `source_negative:missing_header:${p.name}`,
+      `field:${p.name}`,
+    ]);
     cases.push(tc);
   }
 
   for (const p of pathParams.filter((x) => x?.required)) {
     const tc = buildBaseCase(
       endpoint,
-      `Verify ${normalizeMethod(endpoint.method)} ${endpoint.path} requires path parameter '${p.name}'`,
+      `Request is rejected when path parameter '${p.name}' is missing or malformed`,
       `Verify that the endpoint cannot be called correctly when required path parameter '${p.name}' is missing or malformed.`,
     );
     tc.expected_results = [
@@ -464,7 +513,10 @@ function generateParamNegativeCases(endpoint) {
       "Negative validation",
       p.name,
     ];
-    tc.references.push(`negative:path_param:${p.name}`);
+    addTemplateReference(tc, "negative.missing_required_path", [
+      `source_negative:path_param:${p.name}`,
+      `field:${p.name}`,
+    ]);
     tc.needs_review = true;
     tc.review_notes =
       "Path parameter omission may need manual execution strategy depending on client/router behavior.";

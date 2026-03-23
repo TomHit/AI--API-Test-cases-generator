@@ -1,6 +1,22 @@
 function normalizeMethod(method) {
   return String(method || "").toUpperCase();
 }
+function getAuthType(endpoint) {
+  const security = Array.isArray(endpoint?.security) ? endpoint.security : [];
+
+  for (const sec of security) {
+    for (const key of Object.keys(sec)) {
+      const k = key.toLowerCase();
+
+      if (k.includes("oauth")) return "oauth2";
+      if (k.includes("api_key")) return "apiKey";
+      if (k.includes("bearer")) return "bearer";
+      if (k.includes("basic")) return "basic";
+    }
+  }
+
+  return null;
+}
 
 function getJsonSchemaFromContent(content) {
   if (!content || typeof content !== "object") return null;
@@ -338,6 +354,7 @@ export function profileEndpoint(endpoint) {
 
     has2xxResponse: successResponses.length > 0,
     successStatusCodes: successResponses.map(([code]) => String(code)),
+    expectedSuccessCode: firstSuccessStatusCode,
     successResponseIs204: firstSuccessStatusCode === "204",
     hasResponseContentType: responseHasContentType(endpoint),
     hasResponseHeaders: responseHasHeaders(endpoint),
@@ -395,6 +412,7 @@ export function profileEndpoint(endpoint) {
       schemaHasComposition(requestBodySchema),
 
     requiresAuth: endpointRequiresAuth(endpoint),
+    authType: getAuthType(endpoint),
     requiresRoleScope: endpointRequiresRoleScope(endpoint),
     hasRateLimitContract: endpointHasRateLimitContract(endpoint),
 

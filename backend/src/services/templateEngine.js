@@ -1,12 +1,29 @@
 import { TEMPLATE_REGISTRY } from "./templateRegistry.js";
 import { resolveEndpointTestData } from "./testDataResolver.js";
-import { generateNegativeCases } from "./negativeCaseGenerator.js";
-import { evaluateRules } from "../engine/evaluateRules.js";
 
+import { evaluateRules } from "../engine/evaluateRules.js";
+import {
+  buildScenarioPlans,
+  buildCaseFromScenarioPlan,
+  validateScenarioCase,
+} from "./scenarioEngine.js";
 /* ------------------ BASIC HELPERS ------------------ */
 
 function firstItem(list) {
   return Array.isArray(list) && list.length > 0 ? list[0] : null;
+}
+function isScenarioOwnedTemplateKey(templateKey) {
+  const key = String(templateKey || "")
+    .trim()
+    .toLowerCase();
+  return key.startsWith("negative.") || key.startsWith("auth.");
+}
+
+function shouldUseScenarioOwnership(rule, scenarioTemplateKeys) {
+  const templateKey = getTemplateKey(rule);
+  if (!templateKey) return false;
+  if (!isScenarioOwnedTemplateKey(templateKey)) return false;
+  return scenarioTemplateKeys.has(templateKey);
 }
 
 function getReferenceByPrefix(tc, prefix) {
@@ -412,165 +429,6 @@ function isPositiveTemplateKey(templateKey) {
     key.startsWith("schema.") ||
     key === "auth.valid_credentials"
   );
-}
-
-function detectUniversalNegativeTemplateKeys(endpoint) {
-  const out = new Set();
-
-  const queryParams = endpoint?.params?.query || [];
-  const pathParams = endpoint?.params?.path || [];
-  const headerParams = endpoint?.params?.header || [];
-  const preferredBodyType = endpoint?.requestBody?.preferredContentType;
-  const bodySchema = preferredBodyType
-    ? endpoint?.requestBody?.content?.[preferredBodyType]?.schema
-    : null;
-
-  if (queryParams.some((p) => p?.required)) {
-    out.add("negative.missing_required_query");
-  }
-
-  if (pathParams.some((p) => p?.required)) {
-    out.add("negative.missing_required_path");
-  }
-
-  if (
-    queryParams.some((p) => {
-      const s = p?.schema || {};
-      return !!s.type || !!s.format;
-    })
-  ) {
-    out.add("negative.invalid_query_type");
-  }
-
-  const hasEnum = (fields = []) =>
-    fields.some(
-      (p) => Array.isArray(p?.schema?.enum) && p.schema.enum.length > 0,
-    );
-
-  if (hasEnum(queryParams) || hasEnum(pathParams) || hasEnum(headerParams)) {
-    out.add("negative.invalid_enum");
-  }
-
-  const hasFormat = (fields = []) =>
-    fields.some((p) => {
-      const s = p?.schema || {};
-      return !!s.format || !!s.pattern;
-    });
-
-  if (
-    hasFormat(queryParams) ||
-    hasFormat(pathParams) ||
-    hasFormat(headerParams)
-  ) {
-    out.add("negative.invalid_format");
-  }
-
-  const hasStringMaxLength = (fields = []) =>
-    fields.some((p) => typeof p?.schema?.maxLength === "number");
-
-  if (
-    hasStringMaxLength(queryParams) ||
-    hasStringMaxLength(pathParams) ||
-    hasStringMaxLength(headerParams)
-  ) {
-    out.add("negative.string_too_long");
-  }
-
-  const hasNumericMaximum = (fields = []) =>
-    fields.some((p) => typeof p?.schema?.maximum === "number");
-
-  if (
-    hasNumericMaximum(queryParams) ||
-    hasNumericMaximum(pathParams) ||
-    hasNumericMaximum(headerParams)
-  ) {
-    out.add("negative.numeric_above_maximum");
-  }
-
-  if (endpoint?.requestBody?.required) {
-    out.add("negative.empty_body");
-  }
-
-  if (
-    preferredBodyType &&
-    String(preferredBodyType).includes("json") &&
-    bodySchema
-  ) {
-    out.add("negative.invalid_content_type");
-    out.add("negative.malformed_json");
-  }
-
-  if (bodySchema && (bodySchema.type === "object" || bodySchema.properties)) {
-    out.add("negative.additional_property");
-  }
-
-  if (
-    bodySchema &&
-    Array.isArray(bodySchema.required) &&
-    bodySchema.required.length > 0
-  ) {
-    out.add("negative.null_required_field");
-  }
-
-  const queryNames = queryParams.map((p) =>
-    String(p?.name || "").toLowerCase(),
-  );
-  if (
-    queryNames.some((n) =>
-      [
-        "page",
-        "limit",
-        "offset",
-        "pagesize",
-        "page_size",
-        "per_page",
-        "cursor",
-        "size",
-      ].includes(n),
-    )
-  ) {
-    out.add("negative.invalid_pagination");
-  }
-
-  if (pathParams.length > 0) {
-    out.add("negative.resource_not_found");
-  }
-
-  return Array.from(out);
-}
-
-function buildUniversalNegativeCases(endpoint) {
-  const templateKeys = detectUniversalNegativeTemplateKeys(endpoint);
-  const cases = [];
-
-  for (const templateKey of templateKeys) {
-    const fn = TEMPLATE_REGISTRY[templateKey];
-    if (!fn) continue;
-
-    const pseudoRule = {
-      rule_id: `AUTO_${templateKey}`,
-      category: "negative",
-      scenario: `Auto-generated negative case for ${templateKey}`,
-      template_key: templateKey,
-      notes: "Generated automatically from endpoint schema",
-    };
-
-    try {
-      const tc = annotateCase(fn(endpoint), pseudoRule, endpoint);
-      if (tc) {
-        tc.references = ensureArray(tc.references);
-        tc.references.push("auto_generated:universal_negative");
-        cases.push(tc);
-      }
-    } catch (err) {
-      console.error(
-        `Universal negative template build failed: ${templateKey}`,
-        err,
-      );
-    }
-  }
-
-  return cases;
 }
 
 /* ------------------ DATA RESOLUTION ------------------ */
@@ -1340,61 +1198,75 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
     _resolvedTestData: resolveEndpointTestData(endpoint),
   };
 
-  const matchedRules = await resolveCsvRules(enrichedEndpoint, options);
+  const evalResult = await evaluateRules(enrichedEndpoint, options);
+  const profile = evalResult?.profile || {};
+  const matchedRules = Array.isArray(evalResult?.rules) ? evalResult.rules : [];
+
   const cases = [];
 
-  for (const rule of Array.isArray(matchedRules) ? matchedRules : []) {
+  const scenarioPlans = buildScenarioPlans(
+    enrichedEndpoint,
+    profile,
+    matchedRules,
+  );
+
+  const scenarioTemplateKeys = new Set(
+    scenarioPlans.map((p) => p?.template_key).filter(Boolean),
+  );
+
+  for (const plan of scenarioPlans) {
     try {
-      const tc = buildCaseFromCsvRule(rule, enrichedEndpoint);
-      if (tc) cases.push(tc);
+      const tc = buildCaseFromScenarioPlan(enrichedEndpoint, profile, plan);
+      const validation = validateScenarioCase(tc, profile, plan);
+
+      if (!validation.is_valid) {
+        console.warn("Scenario case rejected:", {
+          scenario_id: plan?.scenario_id,
+          template_key: plan?.template_key,
+          errors: validation.errors,
+        });
+        continue;
+      }
+
+      cases.push(tc);
     } catch (err) {
       console.error(
-        `Template build failed for CSV rule: ${rule?.rule_id}`,
+        `Scenario plan build failed for ${plan?.template_key || "unknown"}`,
         err,
       );
     }
   }
 
-  const include = Array.isArray(options?.include)
-    ? options.include.map((x) => String(x).toLowerCase())
-    : ["contract", "schema"];
+  for (const rule of matchedRules) {
+    try {
+      const templateKey = getTemplateKey(rule);
 
-  if (include.includes("negative")) {
-    const autoNegativeCases = buildUniversalNegativeCases(enrichedEndpoint);
-    const schemaNegativeCases = generateNegativeCases(enrichedEndpoint);
-    const existingTemplateKeys = new Set(
-      cases
-        .flatMap((tc) => tc.references || [])
-        .filter((ref) => ref.startsWith("template_key:"))
-        .map((ref) => ref.replace("template_key:", "").toLowerCase()),
-    );
-
-    for (const tc of autoNegativeCases) {
-      const key = (tc.references || [])
-        .find((r) => r.startsWith("template_key:"))
-        ?.replace("template_key:", "")
-        ?.toLowerCase();
-
-      if (!key || !existingTemplateKeys.has(key)) {
-        cases.push(tc);
-        if (key) existingTemplateKeys.add(key);
+      if (scenarioTemplateKeys.has(templateKey)) {
+        continue;
       }
-    }
 
-    for (const tc of schemaNegativeCases) {
-      const key = (tc.references || [])
-        .find((r) => r.startsWith("template_key:"))
-        ?.replace("template_key:", "")
-        ?.toLowerCase();
-
-      if (!key || !existingTemplateKeys.has(key)) {
-        cases.push(tc);
-        if (key) existingTemplateKeys.add(key);
+      // TEMP QUICK FIX:
+      // disable legacy negative/auth cases not yet migrated to scenario engine
+      if (
+        templateKey?.startsWith("negative.") ||
+        templateKey?.startsWith("auth.")
+      ) {
+        continue;
       }
+
+      const tc = buildCaseFromCsvRule(rule, enrichedEndpoint);
+      if (tc) {
+        cases.push(tc);
+      }
+    } catch (err) {
+      console.error(
+        `Template build failed for CSV rule: ${rule?.rule_id || "UNKNOWN"}`,
+        err,
+      );
     }
   }
 
-  return cases;
+  return dedupeCases(cases);
 }
 
 function isGenericTitle(value) {
@@ -1423,6 +1295,10 @@ function formatGeneratedCase(tc, endpoint) {
   const path = tc.api_details?.path || "/";
   const testType = String(tc.test_type || "").toLowerCase();
   const templateKey = getTemplateKeyFromCase(tc);
+  const isScenarioCase =
+    getReferenceByPrefix(tc, "source:").toLowerCase() ===
+      "source:scenario_engine" ||
+    ensureArray(tc.references).includes("source:scenario_engine");
 
   /* ---------------- TITLE FIX ---------------- */
 
@@ -1608,6 +1484,15 @@ function formatGeneratedCase(tc, endpoint) {
       ? "Reject login-related request for insufficient role permissions"
       : `Reject ${readableResource.toLowerCase()} request for insufficient role permissions`,
   };
+  if (isScenarioCase && (testType === "negative" || testType === "auth")) {
+    const cleaned = { ...tc };
+
+    if (method === "GET" && cleaned?.test_data) {
+      delete cleaned.test_data.request_body;
+    }
+
+    return cleaned;
+  }
 
   if (titleMap[templateKey]) {
     tc.title = titleMap[templateKey];
