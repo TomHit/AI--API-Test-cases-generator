@@ -437,15 +437,29 @@ function applyResponseAwareCaseNormalization(plan, endpoints) {
       const profile = detectResponseProfile(endpoint);
 
       if (
-        profile.kind === "html" ||
-        profile.kind === "binary" ||
-        profile.kind === "empty"
+        !Array.isArray(testCase?.steps) ||
+        testCase.steps.length === 0 ||
+        !Array.isArray(testCase?.expected_results) ||
+        testCase.expected_results.length === 0 ||
+        !Array.isArray(testCase?.validation_focus) ||
+        testCase.validation_focus.length === 0
       ) {
         return {
           ...testCase,
-          steps: canonical.steps,
-          expected_results: canonical.expected_results,
-          validation_focus: canonical.validation_focus,
+          steps:
+            Array.isArray(testCase?.steps) && testCase.steps.length > 0
+              ? testCase.steps
+              : canonical.steps,
+          expected_results:
+            Array.isArray(testCase?.expected_results) &&
+            testCase.expected_results.length > 0
+              ? testCase.expected_results
+              : canonical.expected_results,
+          validation_focus:
+            Array.isArray(testCase?.validation_focus) &&
+            testCase.validation_focus.length > 0
+              ? testCase.validation_focus
+              : canonical.validation_focus,
         };
       }
 
@@ -756,7 +770,7 @@ export async function generateTestPlan(payload) {
 
   const include = Array.isArray(payload?.include)
     ? payload.include
-    : ["contract", "schema"];
+    : ["contract", "schema", "negative", "auth"];
 
   const env = payload?.env || "staging";
   const auth_profile = payload?.auth_profile || "device";
@@ -889,7 +903,7 @@ export async function generateTestPlan(payload) {
     let batchObj = batchPlan;
 
     batchObj = enrichSuitesWithCaseIds(batchObj, batch, fallbackBaseUrl);
-    batchObj = applyResponseAwareCaseNormalization(batchObj, batch);
+    //batchObj = applyResponseAwareCaseNormalization(batchObj, batch);
     //batchObj = filterGeneratedPlanToEligibleEndpoints(batchObj, batch);
     mergedSuites.push(...(batchObj.suites || []));
   }
