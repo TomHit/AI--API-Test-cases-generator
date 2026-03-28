@@ -1,0 +1,727 @@
+:root {
+  --tol-bg: #07111f;
+  --tol-bg-2: #0d1728;
+  --tol-panel: rgba(16, 26, 43, 0.78);
+  --tol-panel-2: #0f1b2f;
+  --tol-card: #0f1a2d;
+  --tol-border: rgba(255, 255, 255, 0.08);
+  --tol-text: #ecf3ff;
+  --tol-muted: #aab8d0;
+  --tol-blue: #6ea8ff;
+  --tol-cyan: #4fe0ff;
+  --tol-glow: rgba(79, 224, 255, 0.18);
+  --tol-green: #2bd49c;
+  --tol-yellow: #ffc857;
+  --tol-red: #ff6b6b;
+  --tol-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(110, 168, 255, 0.16),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(79, 224, 255, 0.12),
+      transparent 25%
+    ),
+    linear-gradient(180deg, #06101e 0%, #091322 36%, #0b1423 100%);
+  color: var(--tol-text);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.tol-page {
+  min-height: 100vh;
+}
+
+.tol-header {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 22px 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tol-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tol-brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1.15rem;
+  color: #07111f;
+  background: linear-gradient(135deg, var(--tol-cyan), var(--tol-blue));
+  box-shadow: 0 8px 30px var(--tol-glow);
+}
+
+.tol-brand-title {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.tol-brand-subtitle {
+  font-size: 0.82rem;
+  color: var(--tol-muted);
+}
+
+.tol-nav {
+  display: flex;
+  gap: 20px;
+  font-size: 0.95rem;
+  color: #cfdbef;
+}
+
+.tol-nav a:hover {
+  color: #ffffff;
+}
+
+.tol-hero,
+.tol-section {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.tol-hero {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 28px;
+  align-items: center;
+  padding: 42px 0 52px;
+}
+
+.tol-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(79, 224, 255, 0.28);
+  background: rgba(79, 224, 255, 0.08);
+  color: #d9faff;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  margin-bottom: 18px;
+}
+
+.tol-hero h1 {
+  margin: 0;
+  font-size: clamp(2.6rem, 5vw, 4.8rem);
+  line-height: 0.96;
+  letter-spacing: -0.04em;
+}
+
+.tol-hero h1 span {
+  color: var(--tol-cyan);
+}
+
+.tol-hero-text {
+  margin: 20px 0 0;
+  max-width: 640px;
+  color: var(--tol-muted);
+  font-size: 1.08rem;
+  line-height: 1.72;
+}
+
+.tol-hero-actions {
+  display: flex;
+  gap: 14px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+
+.tol-hero-actions.center {
+  justify-content: center;
+}
+
+.tol-btn {
+  border: 0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  font-weight: 700;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.tol-btn:hover {
+  transform: translateY(-1px);
+}
+
+.tol-btn-primary {
+  color: #07111f;
+  background: linear-gradient(135deg, var(--tol-cyan), var(--tol-blue));
+  box-shadow: 0 16px 30px rgba(79, 224, 255, 0.18);
+}
+
+.tol-btn-secondary {
+  color: var(--tol-text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--tol-border);
+}
+
+.tol-btn-small {
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  color: var(--tol-text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--tol-border);
+}
+
+.tol-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.tol-stat-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--tol-border);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--tol-shadow);
+}
+
+.tol-stat-card strong {
+  display: block;
+  font-size: 1.2rem;
+  margin-bottom: 6px;
+}
+
+.tol-stat-card span {
+  color: var(--tol-muted);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.tol-hero-visual {
+  position: relative;
+}
+
+.tol-demo-shell {
+  background: linear-gradient(
+    180deg,
+    rgba(14, 25, 42, 0.95),
+    rgba(10, 18, 31, 0.95)
+  );
+  border: 1px solid rgba(110, 168, 255, 0.16);
+  border-radius: 24px;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(79, 224, 255, 0.08) inset;
+  overflow: hidden;
+}
+
+.tol-demo-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--tol-border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.red {
+  background: #ff6b6b;
+}
+
+.yellow {
+  background: #ffc857;
+}
+
+.green {
+  background: #2bd49c;
+}
+
+.tol-demo-url {
+  margin-left: 10px;
+  color: var(--tol-muted);
+  font-size: 0.86rem;
+}
+
+.tol-demo-body {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  min-height: 620px;
+}
+
+.tol-demo-sidebar {
+  border-right: 1px solid var(--tol-border);
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.tol-demo-main {
+  padding: 18px;
+}
+
+.tol-panel-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f6fbff;
+}
+
+.tol-panel-subtitle {
+  color: var(--tol-muted);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.tol-mt {
+  margin-top: 20px;
+}
+
+.tol-upload-box {
+  margin-top: 12px;
+  border-radius: 18px;
+  padding: 20px 16px;
+  border: 1px dashed rgba(79, 224, 255, 0.28);
+  background: rgba(79, 224, 255, 0.05);
+  text-align: center;
+}
+
+.tol-upload-icon {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 10px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(
+    135deg,
+    rgba(79, 224, 255, 0.18),
+    rgba(110, 168, 255, 0.14)
+  );
+  color: #dffcff;
+  font-weight: 800;
+}
+
+.tol-upload-title {
+  font-weight: 700;
+}
+
+.tol-upload-meta {
+  color: var(--tol-muted);
+  font-size: 0.86rem;
+  margin-top: 5px;
+}
+
+.tol-endpoint-pill {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--tol-border);
+  color: #d8e5f7;
+  font-size: 0.9rem;
+}
+
+.tol-endpoint-pill.active {
+  background: rgba(110, 168, 255, 0.12);
+  border-color: rgba(110, 168, 255, 0.26);
+  color: #ffffff;
+}
+
+.tol-main-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.tol-table-wrap {
+  overflow: auto;
+  border-radius: 18px;
+  border: 1px solid var(--tol-border);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tol-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 700px;
+}
+
+.tol-table th,
+.tol-table td {
+  text-align: left;
+  padding: 14px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.92rem;
+}
+
+.tol-table thead th {
+  color: #c8d6eb;
+  font-weight: 700;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.tol-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.tol-chip.contract {
+  background: rgba(43, 212, 156, 0.14);
+  color: #7bf2c8;
+}
+
+.tol-chip.schema {
+  background: rgba(110, 168, 255, 0.14);
+  color: #a8c9ff;
+}
+
+.tol-chip.negative {
+  background: rgba(255, 107, 107, 0.14);
+  color: #ffb2b2;
+}
+
+.tol-link-btn {
+  border: 0;
+  background: transparent;
+  color: var(--tol-cyan);
+  font-weight: 700;
+}
+
+.tol-drawer {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--tol-border);
+}
+
+.tol-drawer-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 12px;
+}
+
+.tol-drawer-label {
+  margin-top: 14px;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9eb3d1;
+  font-weight: 700;
+}
+
+.tol-drawer p {
+  margin: 0;
+  color: var(--tol-muted);
+  line-height: 1.65;
+}
+
+.tol-ordered {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--tol-muted);
+  line-height: 1.7;
+}
+
+.tol-section {
+  padding: 78px 0;
+}
+
+.tol-section-head {
+  max-width: 760px;
+  margin-bottom: 26px;
+}
+
+.tol-kicker {
+  display: inline-block;
+  color: var(--tol-cyan);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+}
+
+.tol-section-head h2 {
+  margin: 0;
+  font-size: clamp(2rem, 3.2vw, 3rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.tol-section-head p {
+  margin-top: 14px;
+  color: var(--tol-muted);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.tol-grid-three,
+.tol-grid-four,
+.tol-steps {
+  display: grid;
+  gap: 18px;
+}
+
+.tol-grid-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tol-grid-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tol-info-card,
+.tol-feature-card,
+.tol-audience-card,
+.tol-step-card,
+.tol-compare-card {
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--tol-border);
+  padding: 22px;
+  box-shadow: var(--tol-shadow);
+}
+
+.tol-info-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(
+    135deg,
+    rgba(79, 224, 255, 0.12),
+    rgba(110, 168, 255, 0.16)
+  );
+  margin-bottom: 14px;
+  font-size: 1.1rem;
+}
+
+.tol-info-card h3,
+.tol-feature-card h3,
+.tol-audience-card h3 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.tol-info-card p,
+.tol-feature-card p,
+.tol-audience-card p,
+.tol-step-card p,
+.tol-compare-card li,
+.tol-big-shift p {
+  margin: 0;
+  color: var(--tol-muted);
+  line-height: 1.65;
+}
+
+.tol-dark-band {
+  padding-top: 28px;
+  padding-bottom: 28px;
+}
+
+.tol-before-after {
+  display: grid;
+  grid-template-columns: 1fr 0.9fr 1fr;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.tol-compare-title {
+  font-size: 1rem;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.tol-compare-card ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.8;
+}
+
+.tol-big-shift {
+  border-radius: 24px;
+  padding: 26px;
+  text-align: center;
+  background:
+    radial-gradient(circle at top, rgba(79, 224, 255, 0.16), transparent 45%),
+    linear-gradient(180deg, rgba(17, 31, 53, 0.95), rgba(11, 21, 36, 0.95));
+  border: 1px solid rgba(79, 224, 255, 0.16);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.36);
+}
+
+.tol-shift-label {
+  color: var(--tol-cyan);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+}
+
+.tol-shift-value {
+  margin-top: 10px;
+  font-size: clamp(1.7rem, 3vw, 2.5rem);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.tol-steps {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tol-step-index {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  margin-bottom: 14px;
+  background: linear-gradient(135deg, var(--tol-blue), var(--tol-cyan));
+  color: #07111f;
+}
+
+.tol-final-cta {
+  padding-top: 34px;
+  padding-bottom: 88px;
+}
+
+.tol-final-box {
+  border-radius: 28px;
+  border: 1px solid rgba(79, 224, 255, 0.18);
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(79, 224, 255, 0.12),
+      transparent 30%
+    ),
+    linear-gradient(180deg, rgba(13, 24, 41, 0.95), rgba(10, 17, 30, 0.95));
+  padding: 42px 30px;
+  text-align: center;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.42);
+}
+
+.tol-final-box h2 {
+  margin: 0;
+  font-size: clamp(2rem, 3.4vw, 3.2rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.tol-final-box h2 span {
+  color: var(--tol-cyan);
+}
+
+.tol-final-box p {
+  max-width: 780px;
+  margin: 16px auto 0;
+  color: var(--tol-muted);
+  line-height: 1.7;
+  font-size: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .tol-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .tol-grid-four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tol-before-after {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .tol-nav {
+    display: none;
+  }
+
+  .tol-demo-body {
+    grid-template-columns: 1fr;
+  }
+
+  .tol-demo-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--tol-border);
+  }
+
+  .tol-hero-stats,
+  .tol-grid-three,
+  .tol-steps,
+  .tol-drawer-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .tol-header,
+  .tol-hero,
+  .tol-section {
+    width: min(100% - 20px, 1200px);
+  }
+
+  .tol-grid-four {
+    grid-template-columns: 1fr;
+  }
+
+  .tol-btn {
+    width: 100%;
+  }
+
+  .tol-hero-actions {
+    flex-direction: column;
+  }
+
+  .tol-final-box {
+    padding: 30px 18px;
+  }
+}
