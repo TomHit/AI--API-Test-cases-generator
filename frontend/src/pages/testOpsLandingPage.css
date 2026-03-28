@@ -57,6 +57,7 @@ button {
 .tol-page {
   min-height: 100vh;
   color: var(--text);
+  overflow-x: hidden;
 }
 
 .tol-header {
@@ -128,38 +129,40 @@ main {
 .tol-hero {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 24px 46px 70px;
+  padding: 24px 46px 34px;
   display: grid;
-  grid-template-columns: minmax(320px, 470px) minmax(0, 1fr);
-  align-items: start;
-  gap: 34px;
+  grid-template-columns: minmax(340px, 1.1fr) minmax(420px, 620px);
+  align-items: center;
+  gap: 56px;
 }
 
 .tol-hero-copy {
   min-width: 0;
-  padding-top: 26px;
+  padding-top: 0;
 }
 
-.tol-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 56px;
-  padding: 0 20px;
-  border-radius: 999px;
-  border: 1px solid rgba(90, 208, 255, 0.35);
-  background: rgba(70, 118, 196, 0.15);
-  color: #e8f4ff;
-  font-size: 1.05rem;
-  max-width: 100%;
+.tol-hero-copy-right {
+  order: 2;
+  min-width: 0;
+  position: relative;
+  z-index: 2;
 }
 
+.tol-hero-visual-top {
+  order: 1;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.tol-hero-copy-right h1,
 .tol-hero h1 {
-  margin: 32px 0 20px;
-  font-size: clamp(3.6rem, 7vw, 7.3rem);
+  margin: 0 0 20px;
+  font-size: clamp(3.5rem, 6.3vw, 6.6rem);
   line-height: 0.92;
   font-weight: 900;
   letter-spacing: -0.05em;
-  max-width: 8ch;
+  max-width: 7ch;
 }
 
 .tol-hero h1 span {
@@ -191,7 +194,8 @@ main {
   transition:
     transform 0.18s ease,
     box-shadow 0.18s ease,
-    border-color 0.18s ease;
+    border-color 0.18s ease,
+    opacity 0.18s ease;
 }
 
 .tol-btn:hover {
@@ -235,45 +239,336 @@ main {
   cursor: pointer;
 }
 
-.tol-hero-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
-  gap: 18px;
-  margin-top: 42px;
+.tol-hero-art {
+  width: 100%;
+  min-height: 390px;
+  margin-top: -72px;
+  position: relative;
+  border-radius: 34px;
+  overflow: visible;
+  transform: perspective(1800px) rotateY(-14deg) rotateX(7deg) translateY(-8px);
+  transform-style: preserve-3d;
+  transition:
+    transform 0.35s ease,
+    filter 0.35s ease;
+  filter: saturate(1.05);
 }
 
-.tol-stat-card {
-  min-width: 0;
-  min-height: 142px;
-  padding: 22px 20px;
-  border-radius: 28px;
+.tol-hero-intelligence-box {
+  position: relative;
+  overflow: hidden;
+}
+
+.tol-hero-intelligence-box::before {
+  content: "";
+  position: absolute;
+  inset: -30% auto -30% -20%;
+  width: 55%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.06),
+    transparent
+  );
+  transform: skewX(-20deg);
+  animation: tolShimmer 4.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.tol-hero-ai-orb {
+  animation: tolPulse 2.8s ease-in-out infinite;
+  box-shadow:
+    0 0 0 0 rgba(89, 199, 255, 0.35),
+    0 0 30px rgba(89, 199, 255, 0.18);
+}
+
+.tol-hero-float-row {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  animation: tolFloat 4.2s ease-in-out infinite;
+}
+
+.tol-hero-float-row.delay-1 {
+  animation-delay: 0.5s;
+}
+
+.tol-hero-float-row.delay-2 {
+  animation-delay: 1s;
+}
+
+.tol-hero-float-row.delay-3 {
+  animation-delay: 1.5s;
+}
+
+.tol-hero-row-label {
+  color: #d9ecff;
+  font-size: 0.94rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+@keyframes tolPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 rgba(89, 199, 255, 0.35),
+      0 0 30px rgba(89, 199, 255, 0.18);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow:
+      0 0 0 10px rgba(89, 199, 255, 0),
+      0 0 42px rgba(89, 199, 255, 0.24);
+  }
+}
+
+@keyframes tolFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.92;
+  }
+  50% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes tolShimmer {
+  0% {
+    transform: translateX(-120%) skewX(-20deg);
+  }
+  100% {
+    transform: translateX(320%) skewX(-20deg);
+  }
+}
+
+.tol-hero-art:hover {
+  transform: perspective(1800px) rotateY(-9deg) rotateX(4deg) translateY(-14px)
+    scale(1.01);
+}
+
+.tol-hero-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 34px;
+  background:
+    linear-gradient(145deg, rgba(10, 26, 56, 0.98), rgba(3, 10, 26, 0.98)),
+    radial-gradient(
+      circle at 24% 26%,
+      rgba(91, 199, 255, 0.22),
+      transparent 22%
+    ),
+    radial-gradient(
+      circle at 76% 70%,
+      rgba(124, 140, 255, 0.18),
+      transparent 24%
+    );
+  border: 1px solid rgba(118, 151, 255, 0.16);
+  box-shadow:
+    0 60px 120px rgba(0, 0, 0, 0.55),
+    0 20px 40px rgba(44, 72, 140, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset -24px -24px 50px rgba(0, 0, 0, 0.28);
+}
+
+.tol-hero-art::after {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -42px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.4);
+  filter: blur(22px);
+  z-index: -1;
+}
+
+.tol-hero-art-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(28px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.tol-hero-art-glow-a {
+  width: 170px;
+  height: 170px;
+  top: 42px;
+  left: 80px;
+  background: rgba(71, 210, 255, 0.16);
+}
+
+.tol-hero-art-glow-b {
+  width: 180px;
+  height: 180px;
+  bottom: 58px;
+  right: 120px;
+  background: rgba(124, 140, 255, 0.13);
+}
+
+.tol-hero-art-glow-c {
+  width: 110px;
+  height: 110px;
+  top: 140px;
+  right: 70px;
+  background: rgba(89, 199, 255, 0.08);
+}
+
+.tol-hero-art-inner {
+  position: absolute;
+  inset: 28px;
+  border-radius: 24px;
+  background: rgba(9, 20, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 18px;
+  z-index: 1;
+  backdrop-filter: blur(6px);
+}
+
+.tol-hero-art-left,
+.tol-hero-art-right {
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tol-hero-art-left {
+  padding: 18px;
+}
+
+.tol-hero-art-right {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tol-hero-mini-kicker {
+  color: #9ccaff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.tol-hero-mini-line {
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(91, 199, 255, 0.28),
+    rgba(255, 255, 255, 0.06)
+  );
+  margin-bottom: 12px;
+}
+
+.tol-hero-mini-line.short {
+  width: 42%;
+}
+
+.tol-hero-mini-line.mid {
+  width: 64%;
+}
+
+.tol-hero-mini-line.long {
+  width: 86%;
+}
+
+.tol-hero-mini-box {
+  height: 176px;
+  border-radius: 22px;
+  margin-top: 14px;
   background: linear-gradient(
     180deg,
-    rgba(33, 46, 83, 0.8),
-    rgba(18, 28, 57, 0.88)
+    rgba(27, 57, 106, 0.42),
+    rgba(13, 24, 46, 0.62)
   );
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: var(--shadow);
+  border: 1px dashed rgba(91, 199, 255, 0.26);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 20px;
 }
 
-.tol-stat-card strong {
-  display: block;
-  font-size: clamp(1.8rem, 2.8vw, 2.8rem);
-  line-height: 1;
-  font-weight: 900;
-  margin-bottom: 12px;
-  word-break: break-word;
+.tol-hero-upload-orb {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 1.8rem;
+  background: rgba(77, 167, 255, 0.16);
+  color: #e8f7ff;
 }
 
-.tol-stat-card span {
-  display: block;
-  color: var(--muted);
-  line-height: 1.45;
-  font-size: 1rem;
+.tol-hero-upload-title {
+  font-weight: 800;
+  font-size: 1.1rem;
+  text-align: center;
+  margin: 0;
 }
 
-.tol-hero-visual {
-  min-width: 0;
+.tol-hero-upload-subtitle {
+  display: none;
+}
+
+.tol-hero-mini-row {
+  height: 48px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tol-hero-mini-row.short {
+  width: 78%;
+}
+
+.tol-hero-mini-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.tol-hero-mini-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #d9ebff;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.tol-hero-mini-chip.active {
+  background: rgba(77, 167, 255, 0.18);
+  color: #8fdfff;
+}
+
+.tol-demo-section {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 46px 70px;
+}
+
+.tol-demo-shell-wide {
+  width: 100%;
 }
 
 .tol-demo-shell {
@@ -308,9 +603,11 @@ main {
 .dot.red {
   background: #ff6c7a;
 }
+
 .dot.yellow {
   background: #ffd365;
 }
+
 .dot.green {
   background: #3dd9a5;
 }
@@ -322,6 +619,7 @@ main {
   word-break: break-word;
 }
 
+.tol-demo-shell-wide .tol-demo-body,
 .tol-demo-body {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
@@ -417,8 +715,34 @@ main {
 
 .tol-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 0;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.tol-table th:nth-child(1),
+.tol-table td:nth-child(1) {
+  width: 34%;
+}
+
+.tol-table th:nth-child(2),
+.tol-table td:nth-child(2) {
+  width: 14%;
+}
+
+.tol-table th:nth-child(3),
+.tol-table td:nth-child(3) {
+  width: 22%;
+}
+
+.tol-table th:nth-child(4),
+.tol-table td:nth-child(4) {
+  width: 12%;
+}
+
+.tol-table th:nth-child(5),
+.tol-table td:nth-child(5) {
+  width: 12%;
 }
 
 .tol-table th,
@@ -428,16 +752,18 @@ main {
   vertical-align: top;
 }
 
+.tol-table td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 1rem;
+  color: #f5f8ff;
+}
+
 .tol-table th {
   font-size: 0.95rem;
   color: #d9e5ff;
   letter-spacing: 0.04em;
-}
-
-.tol-table td {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 1rem;
-  color: #f5f8ff;
 }
 
 .tol-chip {
@@ -709,14 +1035,20 @@ main {
 @media (max-width: 1260px) {
   .tol-hero {
     grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .tol-hero-copy-right,
+  .tol-hero-visual-top {
+    order: initial;
+  }
+
+  .tol-demo-shell-wide .tol-demo-body {
+    grid-template-columns: 1fr;
   }
 
   .tol-hero h1 {
     max-width: 10ch;
-  }
-
-  .tol-demo-body {
-    grid-template-columns: 1fr;
   }
 
   .tol-demo-sidebar {
@@ -739,12 +1071,22 @@ main {
   .tol-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .tol-hero-art {
+    margin-top: 0;
+    transform: none;
+  }
+
+  .tol-hero-art:hover {
+    transform: none;
+  }
 }
 
 @media (max-width: 920px) {
   .tol-header,
   .tol-hero,
-  .tol-section {
+  .tol-section,
+  .tol-demo-section {
     padding-left: 20px;
     padding-right: 20px;
   }
@@ -762,7 +1104,6 @@ main {
     font-size: clamp(3rem, 14vw, 5rem);
   }
 
-  .tol-hero-stats,
   .tol-grid-three,
   .tol-grid-four,
   .tol-steps,
@@ -773,6 +1114,10 @@ main {
   .tol-main-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .tol-hero-art-inner {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -796,20 +1141,11 @@ main {
     font-size: 0.95rem;
   }
 
-  .tol-badge {
-    min-height: 48px;
-    font-size: 0.95rem;
-  }
-
   .tol-btn-primary,
   .tol-btn-secondary,
   .tol-btn-small {
     width: 100%;
     justify-content: center;
-  }
-
-  .tol-stat-card {
-    min-height: 0;
   }
 
   .tol-demo-topbar {
@@ -835,5 +1171,10 @@ main {
   .tol-table th,
   .tol-table td {
     padding: 14px 12px;
+  }
+
+  .tol-hero-art-inner {
+    inset: 16px;
+    padding: 14px;
   }
 }

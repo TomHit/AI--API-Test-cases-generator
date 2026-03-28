@@ -1,6 +1,6 @@
 import React from "react";
 import "./testOpsLandingPage.css";
-
+import { useNavigate } from "react-router-dom";
 const sampleRows = [
   {
     title: "Validate successful login response",
@@ -36,13 +36,14 @@ const steps = [
 ];
 
 export default function TestOpsLandingPage() {
+  const navigate = useNavigate();
   return (
     <div className="tol-page">
       <header className="tol-header">
         <div className="tol-brand">
           <div className="tol-brand-mark">T</div>
           <div>
-            <div className="tol-brand-title">TestOps</div>
+            <div className="tol-brand-title">IntOps</div>
             <div className="tol-brand-subtitle">
               API → UI → Automation ready
             </div>
@@ -58,14 +59,53 @@ export default function TestOpsLandingPage() {
       </header>
 
       <main>
-        <section className="tol-hero">
-          <div className="tol-hero-copy">
-            <div className="tol-badge">
-              Built for QA teams under sprint pressure
-            </div>
+        <section className="tol-hero tol-hero-top">
+          <div className="tol-hero-visual tol-hero-visual-top">
+            <div className="tol-hero-art">
+              <div className="tol-hero-art-glow tol-hero-art-glow-a" />
+              <div className="tol-hero-art-glow tol-hero-art-glow-b" />
+              <div className="tol-hero-art-glow tol-hero-art-glow-c" />
 
+              <div className="tol-hero-art-inner">
+                <div className="tol-hero-art-left">
+                  <div className="tol-hero-mini-line short" />
+                  <div className="tol-hero-mini-line mid" />
+
+                  <div className="tol-hero-mini-box tol-hero-intelligence-box">
+                    <div className="tol-hero-upload-orb tol-hero-ai-orb">✦</div>
+                    <div className="tol-hero-upload-title">
+                      TestOps Intelligence
+                    </div>
+                  </div>
+
+                  <div
+                    className="tol-hero-mini-line long"
+                    style={{ marginTop: 16 }}
+                  />
+                  <div className="tol-hero-mini-line mid" />
+                </div>
+
+                <div className="tol-hero-art-right">
+                  <div className="tol-hero-mini-chip-row"></div>
+
+                  <div className="tol-hero-mini-row tol-hero-float-row">
+                    <span className="tol-hero-row-label">Smart generation</span>
+                  </div>
+
+                  <div className="tol-hero-mini-row tol-hero-float-row delay-2">
+                    <span className="tol-hero-row-label">Automation</span>
+                  </div>
+
+                  <div className="tol-hero-mini-row short tol-hero-float-row delay-3">
+                    <span className="tol-hero-row-label">Scale in cloud</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="tol-hero-copy tol-hero-copy-right">
             <h1>
-              Stop Writing API Test Cases
+              Stop Writing Test Cases
               <span> by Hand.</span>
             </h1>
 
@@ -77,145 +117,129 @@ export default function TestOpsLandingPage() {
             </p>
 
             <div className="tol-hero-actions">
-              <button className="tol-btn tol-btn-primary">
+              <button
+                type="button"
+                className="tol-btn tol-btn-primary"
+                onClick={() => navigate("/onboarding")}
+              >
                 Try the Live Generator
               </button>
-              <button className="tol-btn tol-btn-secondary">
+              <button type="button" className="tol-btn tol-btn-secondary">
                 View Sample Output
               </button>
             </div>
-
-            <div className="tol-hero-stats">
-              <div className="tol-stat-card">
-                <strong>4–5 hrs</strong>
-                <span>Manual work per endpoint today</span>
-              </div>
-              <div className="tol-stat-card">
-                <strong>Minutes</strong>
-                <span>To get structured test cases</span>
-              </div>
-              <div className="tol-stat-card">
-                <strong>3 types</strong>
-                <span>Contract, schema, negative</span>
-              </div>
-            </div>
           </div>
+        </section>
 
-          <div className="tol-hero-visual">
-            <div className="tol-demo-shell">
-              <div className="tol-demo-topbar">
-                <span className="dot red" />
-                <span className="dot yellow" />
-                <span className="dot green" />
-                <div className="tol-demo-url">app.testops.dev/generate</div>
-              </div>
+        <section className="tol-demo-section">
+          <div className="tol-demo-shell tol-demo-shell-wide">
+            <div className="tol-demo-topbar">
+              <span className="dot red" />
+              <span className="dot yellow" />
+              <span className="dot green" />
+              <div className="tol-demo-url">app.testops.dev/generate</div>
+            </div>
 
-              <div className="tol-demo-body">
-                <aside className="tol-demo-sidebar">
-                  <div className="tol-panel-title">Upload spec</div>
+            <div className="tol-demo-body">
+              <aside className="tol-demo-sidebar">
+                <div className="tol-panel-title">Upload spec</div>
 
-                  <div className="tol-upload-box">
-                    <div className="tol-upload-icon">↑</div>
-                    <div className="tol-upload-title">
-                      Drop OpenAPI file here
+                <div className="tol-upload-box">
+                  <div className="tol-upload-icon">↑</div>
+                  <div className="tol-upload-title">Drop OpenAPI file here</div>
+                  <div className="tol-upload-meta">
+                    JSON / YAML / URL import
+                  </div>
+                </div>
+
+                <div className="tol-panel-title tol-mt">Detected endpoints</div>
+                <div className="tol-endpoint-pill active">POST /auth/login</div>
+                <div className="tol-endpoint-pill">GET /users/{"{id}"}</div>
+                <div className="tol-endpoint-pill">PUT /profile</div>
+                <div className="tol-endpoint-pill">
+                  DELETE /sessions/{"{id}"}
+                </div>
+              </aside>
+
+              <section className="tol-demo-main">
+                <div className="tol-main-header">
+                  <div>
+                    <div className="tol-panel-title">Generated test cases</div>
+                    <div className="tol-panel-subtitle">
+                      Structured output your QA team can review and use
                     </div>
-                    <div className="tol-upload-meta">
-                      JSON / YAML / URL import
-                    </div>
                   </div>
 
-                  <div className="tol-panel-title tol-mt">
-                    Detected endpoints
-                  </div>
-                  <div className="tol-endpoint-pill active">
-                    POST /auth/login
-                  </div>
-                  <div className="tol-endpoint-pill">GET /users/{"{id}"}</div>
-                  <div className="tol-endpoint-pill">PUT /profile</div>
-                  <div className="tol-endpoint-pill">
-                    DELETE /sessions/{"{id}"}
-                  </div>
-                </aside>
+                  <button type="button" className="tol-btn tol-btn-small">
+                    Export CSV
+                  </button>
+                </div>
 
-                <section className="tol-demo-main">
-                  <div className="tol-main-header">
-                    <div>
-                      <div className="tol-panel-title">
-                        Generated test cases
-                      </div>
-                      <div className="tol-panel-subtitle">
-                        Structured output your QA team can review and use
-                      </div>
-                    </div>
-
-                    <button className="tol-btn tol-btn-small">
-                      Export CSV
-                    </button>
-                  </div>
-
-                  <div className="tol-table-wrap">
-                    <table className="tol-table">
-                      <thead>
-                        <tr>
-                          <th>Title</th>
-                          <th>Type</th>
-                          <th>Endpoint</th>
-                          <th>Priority</th>
-                          <th>Action</th>
+                <div className="tol-table-wrap">
+                  <table className="tol-table">
+                    <thead>
+                      <tr>
+                        <th>Title</th>
+                        <th>Type</th>
+                        <th>Endpoint</th>
+                        <th>Priority</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sampleRows.map((row) => (
+                        <tr key={`${row.title}-${row.endpoint}`}>
+                          <td>{row.title}</td>
+                          <td>
+                            <span className={`tol-chip ${row.type}`}>
+                              {row.type}
+                            </span>
+                          </td>
+                          <td>{row.endpoint}</td>
+                          <td>{row.priority}</td>
+                          <td>
+                            <button type="button" className="tol-link-btn">
+                              View
+                            </button>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {sampleRows.map((row) => (
-                          <tr key={`${row.title}-${row.endpoint}`}>
-                            <td>{row.title}</td>
-                            <td>
-                              <span className={`tol-chip ${row.type}`}>
-                                {row.type}
-                              </span>
-                            </td>
-                            <td>{row.endpoint}</td>
-                            <td>{row.priority}</td>
-                            <td>
-                              <button className="tol-link-btn">View</button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="tol-drawer">
+                  <div className="tol-panel-title">
+                    Reject request when password is missing
                   </div>
 
-                  <div className="tol-drawer">
-                    <div className="tol-panel-title">
-                      Reject request when password is missing
-                    </div>
-                    <div className="tol-drawer-grid">
-                      <div>
-                        <div className="tol-drawer-label">Objective</div>
-                        <p>
-                          Verify that the login endpoint rejects requests when
-                          the required password field is not sent.
-                        </p>
-                      </div>
-
-                      <div>
-                        <div className="tol-drawer-label">Expected results</div>
-                        <p>
-                          Request is rejected, failure response is returned, and
-                          documented error behavior is preserved.
-                        </p>
-                      </div>
+                  <div className="tol-drawer-grid">
+                    <div>
+                      <div className="tol-drawer-label">Objective</div>
+                      <p>
+                        Verify that the login endpoint rejects requests when the
+                        required password field is not sent.
+                      </p>
                     </div>
 
-                    <div className="tol-drawer-label">Steps</div>
-                    <ol className="tol-ordered">
-                      <li>Set HTTP method to POST.</li>
-                      <li>Use endpoint path /auth/login.</li>
-                      <li>Provide body without the password field.</li>
-                      <li>Send the request.</li>
-                    </ol>
+                    <div>
+                      <div className="tol-drawer-label">Expected results</div>
+                      <p>
+                        Request is rejected, failure response is returned, and
+                        documented error behavior is preserved.
+                      </p>
+                    </div>
                   </div>
-                </section>
-              </div>
+
+                  <div className="tol-drawer-label">Steps</div>
+                  <ol className="tol-ordered">
+                    <li>Set HTTP method to POST.</li>
+                    <li>Use endpoint path /auth/login.</li>
+                    <li>Provide body without the password field.</li>
+                    <li>Send the request.</li>
+                  </ol>
+                </div>
+              </section>
             </div>
           </div>
         </section>
@@ -387,10 +411,14 @@ export default function TestOpsLandingPage() {
             </p>
 
             <div className="tol-hero-actions center">
-              <button className="tol-btn tol-btn-primary">
+              <button
+                type="button"
+                className="tol-btn tol-btn-primary"
+                onClick={() => navigate("/onboarding")}
+              >
                 Try the Live Generator
               </button>
-              <button className="tol-btn tol-btn-secondary">
+              <button type="button" className="tol-btn tol-btn-secondary">
                 Request Early Access
               </button>
             </div>

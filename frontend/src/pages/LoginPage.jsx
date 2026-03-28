@@ -43,16 +43,29 @@ export default function LoginPage() {
       return {
         title: "Sign in to your personal workspace",
         subtitle:
-          "Start quickly with Google or continue with your email for a personal API TestOps experience.",
+          "Move faster with a clean personal setup for API test generation and review.",
         badge: "INDIVIDUAL ACCESS",
+        previewChip: "Personal Workspace",
+        previewTitle: "Focused for solo API work",
+        formTitle: "Continue with Google",
+        formText: "Use your Google account to access your personal workspace.",
+        submitLabel: "Continue to Personal Workspace",
+        footnote: "Google sign-in will be connected in the next step.",
       };
     }
 
     return {
       title: "Sign in to your organization workspace",
       subtitle:
-        "Access projects, teams, and shared API quality workflows for your organization.",
+        "Access shared API quality workflows, teams, and projects in one secure workspace.",
       badge: "ORGANIZATION ACCESS",
+      previewChip: "Team Workspace",
+      previewTitle: "Built for shared API quality workflows",
+      formTitle: "Workspace login",
+      formText: "Use your work email to continue into the shared workspace.",
+      submitLabel: "Continue to Organization Workspace",
+      footnote:
+        "Next step: connect organization auth backend and role-based session handling.",
     };
   }, [isIndividual]);
 
@@ -91,57 +104,34 @@ export default function LoginPage() {
       <main className="login-layout">
         <section className="login-panel login-panel-brand">
           <div className="auth-hero-topline">{pageMeta.badge}</div>
-          <h1>{pageMeta.title}</h1>
-          <p className="auth-hero-text">{pageMeta.subtitle}</p>
 
-          <div className="brand-preview-card">
-            <div className="brand-preview-top">
-              <div className="brand-preview-title">API TestOps</div>
-              <div className="brand-preview-chip">
-                {isIndividual ? "Personal" : "Team Workspace"}
-              </div>
+          <h1 className="auth-hero-title">{pageMeta.title}</h1>
+
+          <div className="auth-hero-preview auth-hero-preview-equal">
+            <div className="auth-preview-top">
+              <div className="auth-preview-brand">API TestOps</div>
+              <div className="auth-preview-chip">{pageMeta.previewChip}</div>
             </div>
 
-            <div className="brand-preview-metrics">
-              <div className="brand-preview-metric">
-                <span>Projects</span>
-                <strong>{isIndividual ? "1+" : "Multiple"}</strong>
-              </div>
-              <div className="brand-preview-metric">
-                <span>Coverage</span>
-                <strong>Contract / Negative</strong>
-              </div>
-              <div className="brand-preview-metric">
-                <span>Source</span>
-                <strong>OpenAPI / Swagger</strong>
-              </div>
-            </div>
-
-            <div className="brand-preview-list">
-              <div>✓ Structured project workspace</div>
-              <div>✓ AI-assisted case generation</div>
-              <div>✓ Cleaner onboarding path</div>
+            <div className="auth-preview-center">
+              <div className="auth-preview-orb">✦</div>
+              <h3>{pageMeta.previewTitle}</h3>
             </div>
           </div>
 
-          <Link to="/" className="auth-back-link">
+          <Link to="/onboarding" className="auth-back-link">
             ← Back to setup selection
           </Link>
         </section>
-
         <section className="login-panel login-panel-form">
           <div className="login-card">
             <div className="login-card-head">
-              <h2>{isIndividual ? "Welcome back" : "Workspace login"}</h2>
-              <p>
-                {isIndividual
-                  ? "Use Google for the fastest sign-in, or continue with email."
-                  : "Use your work email to continue into the shared workspace."}
-              </p>
+              <h2>{pageMeta.formTitle}</h2>
+              <p>{pageMeta.formText}</p>
             </div>
 
             {isIndividual ? (
-              <>
+              <div className="login-google-only">
                 <button
                   type="button"
                   className="google-btn"
@@ -150,75 +140,43 @@ export default function LoginPage() {
                   <GoogleMark />
                   <span>Continue with Google</span>
                 </button>
-
-                <div className="auth-divider">
-                  <span>or continue with email</span>
-                </div>
-              </>
-            ) : null}
-
-            <form onSubmit={handleSubmit} className="login-form">
-              {isIndividual ? (
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="login-form">
                 <div className="form-group">
-                  <label>Full Name</label>
+                  <label>Work Email</label>
                   <input
-                    type="text"
-                    value={form.fullName}
+                    type="email"
+                    value={form.email}
                     onChange={(e) =>
-                      setForm((prev) => ({ ...prev, fullName: e.target.value }))
+                      setForm((prev) => ({ ...prev, email: e.target.value }))
                     }
-                    placeholder="Enter your full name"
+                    placeholder="name@company.com"
                   />
                 </div>
-              ) : null}
 
-              <div className="form-group">
-                <label>{isIndividual ? "Email" : "Work Email"}</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, email: e.target.value }))
-                  }
-                  placeholder={
-                    isIndividual ? "you@example.com" : "name@company.com"
-                  }
-                />
-              </div>
+                <div className="form-group">
+                  <label>Password</label>
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, password: e.target.value }))
+                    }
+                    placeholder="Enter your password"
+                  />
+                </div>
 
-              <div className="form-group">
-                <label>
-                  {isIndividual ? "Password (optional for now)" : "Password"}
-                </label>
-                <input
-                  type="password"
-                  value={form.password}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, password: e.target.value }))
-                  }
-                  placeholder={
-                    isIndividual
-                      ? "Optional placeholder"
-                      : "Enter your password"
-                  }
-                />
-              </div>
+                <button
+                  type="submit"
+                  className="auth-primary-btn auth-primary-btn-full"
+                >
+                  {pageMeta.submitLabel}
+                </button>
+              </form>
+            )}
 
-              <button
-                type="submit"
-                className="auth-primary-btn auth-primary-btn-full"
-              >
-                {isIndividual
-                  ? "Continue to Personal Workspace"
-                  : "Continue to Organization Workspace"}
-              </button>
-            </form>
-
-            <div className="login-footnote">
-              {isIndividual
-                ? "Next step: connect real Google Identity Services sign-in."
-                : "Next step: connect organization auth backend and role-based session handling."}
-            </div>
+            <div className="login-footnote">{pageMeta.footnote}</div>
           </div>
         </section>
       </main>

@@ -90,44 +90,16 @@ export default function WorkspacePlaceholderPage() {
         );
 
       case "reports":
-        return (
-          <div className="page-card">
-            <h3 style={{ marginTop: 0 }}>Reports</h3>
-            <p className="muted" style={{ marginBottom: 0 }}>
-              Reports screen will be connected next.
-            </p>
-          </div>
-        );
+        return <EmptyState title="Reports" />;
 
       case "settings":
-        return (
-          <div className="page-card">
-            <h3 style={{ marginTop: 0 }}>Settings</h3>
-            <p className="muted" style={{ marginBottom: 0 }}>
-              Settings screen will be connected next.
-            </p>
-          </div>
-        );
+        return <EmptyState title="Settings" />;
 
       case "overview":
-        return (
-          <div className="page-card">
-            <h3 style={{ marginTop: 0 }}>Overview</h3>
-            <p className="muted" style={{ marginBottom: 0 }}>
-              Organization overview screen will be connected next.
-            </p>
-          </div>
-        );
+        return <EmptyState title="Overview" />;
 
       case "teams":
-        return (
-          <div className="page-card">
-            <h3 style={{ marginTop: 0 }}>Teams</h3>
-            <p className="muted" style={{ marginBottom: 0 }}>
-              Teams screen will be connected next.
-            </p>
-          </div>
-        );
+        return <EmptyState title="Teams" />;
 
       default:
         return (
@@ -142,8 +114,29 @@ export default function WorkspacePlaceholderPage() {
     }
   }
 
+  function getPageTitle() {
+    switch (activeNav) {
+      case "projects":
+        return "Projects";
+      case "generate":
+        return "Generate Test Cases";
+      case "testCases":
+        return "Test Cases";
+      case "reports":
+        return "Reports";
+      case "settings":
+        return "Settings";
+      case "overview":
+        return "Overview";
+      case "teams":
+        return "Teams";
+      default:
+        return "Workspace";
+    }
+  }
+
   return (
-    <div className="app-shell no-ai-panel">
+    <div className="app-shell premium-shell">
       <Sidebar
         activeNav={activeNav}
         onChange={handleSidebarChange}
@@ -151,7 +144,42 @@ export default function WorkspacePlaceholderPage() {
         organization={organization}
       />
 
-      <main className="app-main">{renderContent()}</main>
+      <main className="app-main premium-main">
+        {/* HEADER */}
+        <div className="workspace-header">
+          <div>
+            <h1 className="workspace-title">{getPageTitle()}</h1>
+            <p className="workspace-subtitle">
+              {mode === "organization"
+                ? `${organization?.name} workspace`
+                : "Personal workspace"}
+            </p>
+          </div>
+
+          <div className="workspace-user">
+            <div className="workspace-user-avatar">
+              {email?.[0]?.toUpperCase() || "U"}
+            </div>
+            <div className="workspace-user-meta">
+              <div className="workspace-user-email">{email}</div>
+              <div className="workspace-user-mode">{mode}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* CONTENT */}
+        <div className="workspace-content">{renderContent()}</div>
+      </main>
+    </div>
+  );
+}
+
+/* ---------- Premium Empty State ---------- */
+function EmptyState({ title }) {
+  return (
+    <div className="empty-state">
+      <h3>{title}</h3>
+      <p>This section will be available soon.</p>
     </div>
   );
 }
