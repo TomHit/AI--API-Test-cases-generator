@@ -3,8 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import TestOpsLandingPage from "../pages/TestOpsLandingPage";
 import WelcomePage from "../pages/WelcomePage";
 import LoginPage from "../pages/LoginPage";
-
-import ProjectOnboardingPage from "../pages/ProjectOnboardingPage";
+import WorkspacePlaceholderPage from "../pages/WorkspacePlaceholderPage";
 
 export default function AppRouter() {
   return (
@@ -12,8 +11,7 @@ export default function AppRouter() {
       <Route path="/" element={<TestOpsLandingPage />} />
       <Route path="/onboarding" element={<WelcomePage />} />
       <Route path="/login/:mode" element={<LoginPage />} />
-
-      <Route path="/workspace" element={<ProjectOnboardingPage />} />
+      <Route path="/workspace" element={<WorkspacePlaceholderPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

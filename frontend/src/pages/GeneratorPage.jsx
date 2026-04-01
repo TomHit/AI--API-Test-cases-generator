@@ -303,6 +303,159 @@ export default function GeneratorPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedProjectId, resolvedOptions?.spec_source]);
 
+  useEffect(() => {
+    async function loadPersistedCases() {
+      if (activeSection !== "testCases") return;
+      if (!run?.run_id) return;
+      if (run?.testplan?.suites?.length) return;
+
+      try {
+        const data = await fetchRunCases(run.run_id);
+        const cases = Array.isArray(data?.cases) ? data.cases : [];
+
+        const reconstructedTestplan = {
+          project: {
+            project_id: resolvedProjectId || "",
+            project_name: resolvedProjectId || "Project",
+            env: resolvedOptions.env || "staging",
+          },
+          generation: {
+            generated_at: new Date().toISOString(),
+            model: "deterministic",
+            source: "persisted_run_files",
+          },
+          suites: [
+            {
+              suite_id: "streamed_cases",
+              name: "Generated Test Cases",
+              endpoints: [],
+              cases,
+            },
+          ],
+        };
+
+        const nextRun = {
+          ...run,
+          testplan: reconstructedTestplan,
+          report: {
+            total_cases: cases.length,
+            needs_review: cases.filter((c) => !!c.needs_review).length,
+          },
+        };
+
+        setRun(nextRun);
+
+        if (onSaveGeneratedRun) {
+          onSaveGeneratedRun(nextRun);
+        }
+      } catch (e) {
+        console.error("LOAD PERSISTED CASES ERROR:", e);
+        setRun((prev) => ({
+          ...prev,
+          error: {
+            message: e.message || "Failed to load generated test cases.",
+          },
+        }));
+      }
+    }
+
+    loadPersistedCases();
+  }, [
+    activeSection,
+    run?.run_id,
+    run?.testplan,
+    resolvedProjectId,
+    resolvedOptions.env,
+    onSaveGeneratedRun,
+  ]);
+
+  async function fetchRunCases(runId) {
+    const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/cases`, {
+      headers: { Accept: "application/json" },
+    });
+
+    const text = await res.text();
+    const data = safeJsonParse(text);
+
+    if (!res.ok) {
+      throw new Error(
+        data?.message || `Failed to load run cases (${res.status})`,
+      );
+    }
+
+    return data || null;
+  }
+  async function fetchJobStatus(jobId) {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+      headers: { Accept: "application/json" },
+    });
+
+    const text = await res.text();
+    const data = safeJsonParse(text);
+
+    if (!res.ok) {
+      throw new Error(
+        data?.message || `Failed to fetch job status (${res.status})`,
+      );
+    }
+
+    return data?.job || null;
+  }
+
+  async function fetchJobResult(jobId) {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/result`, {
+      headers: { Accept: "application/json" },
+    });
+
+    const text = await res.text();
+    const data = safeJsonParse(text);
+
+    if (!res.ok) {
+      const err = new Error(
+        data?.message || `Failed to fetch job result (${res.status})`,
+      );
+      err.details = data?.error || null;
+      throw err;
+    }
+
+    return data?.result || null;
+  }
+
+  async function waitForJobCompletion(
+    jobId,
+    { intervalMs = 1500, timeoutMs = 300000 } = {},
+  ) {
+    const startedAt = Date.now();
+
+    while (true) {
+      const job = await fetchJobStatus(jobId);
+
+      if (!job) {
+        throw new Error("Job status payload is missing.");
+      }
+
+      if (job.status === "completed") {
+        return await fetchJobResult(jobId);
+      }
+
+      if (job.status === "failed") {
+        const err = new Error(job?.error?.message || "Generation job failed.");
+        err.details = job?.error || null;
+        throw err;
+      }
+
+      if (Date.now() - startedAt > timeoutMs) {
+        const err = new Error(
+          "Generation timed out while waiting for job completion.",
+        );
+        err.details = { job_id: jobId, status: job.status };
+        throw err;
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+    }
+  }
+
   async function generate() {
     const selected = selection.selected_endpoint_ids;
 
@@ -369,30 +522,54 @@ export default function GeneratorPage({
         throw err;
       }
 
+      const jobId = data?.job_id;
+
+      if (!jobId) {
+        const err = new Error("Job ID was not returned by /api/generate.");
+        err.details = data || null;
+        throw err;
+      }
+
+      const result = await waitForJobCompletion(jobId);
+
       const nextRun = {
-        run_id: data.run_id || "",
+        run_id: result?.run_id || jobId,
         status: "done",
         error: null,
         generation_mode:
-          data.generation_mode || data.details?.generation_mode || "balanced",
-        spec_quality: data.spec_quality || data.details?.spec_quality || null,
-        blocked_endpoints: Array.isArray(data.blocked_endpoints)
-          ? data.blocked_endpoints
-          : Array.isArray(data.details?.blocked_endpoints)
-            ? data.details.blocked_endpoints
+          result?.generation_mode ||
+          result?.details?.generation_mode ||
+          "balanced",
+        spec_quality:
+          result?.spec_quality || result?.details?.spec_quality || null,
+        blocked_endpoints: Array.isArray(result?.blocked_endpoints)
+          ? result.blocked_endpoints
+          : Array.isArray(result?.details?.blocked_endpoints)
+            ? result.details.blocked_endpoints
             : [],
-        partial_endpoints: Array.isArray(data.partial_endpoints)
-          ? data.partial_endpoints
-          : Array.isArray(data.details?.partial_endpoints)
-            ? data.details.partial_endpoints
+        partial_endpoints: Array.isArray(result?.partial_endpoints)
+          ? result.partial_endpoints
+          : Array.isArray(result?.details?.partial_endpoints)
+            ? result.details.partial_endpoints
             : [],
-        eligible_endpoints: Array.isArray(data.eligible_endpoints)
-          ? data.eligible_endpoints
-          : Array.isArray(data.details?.eligible_endpoints)
-            ? data.details.eligible_endpoints
+        eligible_endpoints: Array.isArray(result?.eligible_endpoints)
+          ? result.eligible_endpoints
+          : Array.isArray(result?.details?.eligible_endpoints)
+            ? result.details.eligible_endpoints
             : [],
-        testplan: data.testplan || null,
-        report: data.report || null,
+        batching: result?.batching || null,
+        result_storage: result?.result_storage || null,
+
+        // keep UI alive even though full testplan is no longer returned
+        testplan: result?.testplan || null,
+        report:
+          result?.report ||
+          (result?.run_id
+            ? {
+                total_cases: "Saved to files",
+                needs_review: "-",
+              }
+            : null),
       };
 
       setRun(nextRun);
@@ -1056,6 +1233,26 @@ export default function GeneratorPage({
             </div>
 
             <div style={styles.resultsInner}>
+              {run.status === "done" && !run.testplan && (
+                <div style={styles.infoBox}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>
+                    Generation completed
+                  </div>
+                  <div style={{ marginBottom: 8 }}>Run ID: {run.run_id}</div>
+                  <div style={{ marginBottom: 12 }}>
+                    Cases were saved to batch files. Open the Test Cases tab to
+                    continue.
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => onViewTestCases?.()}
+                    style={styles.primaryBtn}
+                  >
+                    Open Test Cases
+                  </button>
+                </div>
+              )}
               {run.status === "running" && (
                 <div style={styles.resultsProgress}>
                   <div style={styles.resultsProgressTop}>

@@ -4,6 +4,8 @@ import Sidebar from "../components/layout/Sidebar";
 import DashboardPage from "./DashboardPage";
 import GeneratorPage from "./GeneratorPage";
 
+import ProjectOnboardingPage from "./ProjectOnboardingPage";
+
 const DEFAULT_GENERATOR_SETTINGS = {
   env: "staging",
   auth_profile: "",
@@ -23,7 +25,7 @@ export default function WorkspacePlaceholderPage() {
   const mode = location.state?.mode || saved.mode;
   const email = location.state?.email || saved.email || "";
 
-  const [activeNav, setActiveNav] = useState("projects");
+  const [activeNav, setActiveNav] = useState("onboarding");
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [generatorSettings, setGeneratorSettings] = useState(
     DEFAULT_GENERATOR_SETTINGS,
@@ -53,6 +55,15 @@ export default function WorkspacePlaceholderPage() {
 
   function renderContent() {
     switch (activeNav) {
+      case "onboarding":
+        return (
+          <ProjectOnboardingPage
+            onContinueToGeneration={() => {
+              console.log("onContinueToGeneration fired");
+              setActiveNav("projects");
+            }}
+          />
+        );
       case "projects":
         return (
           <DashboardPage
@@ -122,6 +133,8 @@ export default function WorkspacePlaceholderPage() {
         return "Generate Test Cases";
       case "testCases":
         return "Test Cases";
+      case "onboarding":
+        return "Project Onboarding";
       case "reports":
         return "Reports";
       case "settings":
@@ -168,6 +181,9 @@ export default function WorkspacePlaceholderPage() {
         </div>
 
         {/* CONTENT */}
+        <div style={{ marginBottom: 8, color: "#94a3b8", fontSize: 12 }}>
+          Active section: {activeNav}
+        </div>
         <div className="workspace-content">{renderContent()}</div>
       </main>
     </div>

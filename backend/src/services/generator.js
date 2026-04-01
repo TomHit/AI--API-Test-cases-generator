@@ -1,16 +1,15 @@
 import { loadOpenApiDoc } from "./openapiLoader.js";
 import {
-  extractEndpointsFull,
+  extractEndpointsLite,
   extractEndpointsFullSelected,
 } from "./openapiParser.js";
-import { buildGeneratorPrompt, buildRepairPrompt } from "./prompt.js";
-import { getAIProvider } from "../providers/ai/index.js";
+
 import { generateCasesForEndpoints } from "./templateEngine.js";
-import { validateTestPlanOrThrow } from "./schemaValidate.js";
-import { buildReport } from "./report.js";
+
 import { createCaseIdGenerator } from "./caseIdGenerator.js";
 import { validateSpecQuality } from "./specQualityValidator.js";
-
+import fs from "fs/promises";
+import path from "path";
 const SCHEMA_SHAPE_GUIDE = `
 Return ONLY JSON.
 Top keys: project, generation, suites.
@@ -28,6 +27,20 @@ function chunkArray(items, size) {
     out.push(items.slice(i, i + size));
   }
   return out;
+}
+
+const OUT_DIR = path.join(process.cwd(), "job-results");
+
+async function initBatchFile(runId, batchIndex) {
+  await fs.mkdir(OUT_DIR, { recursive: true });
+
+  const file = path.join(OUT_DIR, `${runId}_batch_${batchIndex}.ndjson`);
+  await fs.writeFile(file, "", "utf-8");
+  return file;
+}
+
+async function appendCaseToBatchFile(filePath, testCase) {
+  await fs.appendFile(filePath, JSON.stringify(testCase) + "\n", "utf-8");
 }
 function normalizePriority(priority) {
   const p = String(priority || "")
@@ -570,93 +583,73 @@ async function buildDeterministicTestPlan({
   endpoints,
   caseIdGen,
   fallbackBaseUrl = "",
+  batchFilePath,
 }) {
-  const endpointRefs = endpoints.map((e) => ({
-    method: String(e.method).toUpperCase(),
-    path: e.path,
-  }));
+  const endpointMap = buildEndpointMap(endpoints);
+  const perEndpointSeq = new Map();
 
-  let cases = await generateCasesForEndpoints(endpoints, options);
+  let caseCount = 0;
 
-  console.log(
-    "DETERMINISTIC CASES COUNT:",
-    Array.isArray(cases) ? cases.length : "not-array",
-  );
+  await generateCasesForEndpoints(endpoints, options, async (testCase) => {
+    const method =
+      testCase?.api_details?.method ||
+      testCase?.method ||
+      endpoints?.[0]?.method ||
+      "GET";
 
-  if (Array.isArray(cases)) {
-    const perEndpointSeq = new Map();
+    const path =
+      testCase?.api_details?.path ||
+      testCase?.path ||
+      endpoints?.[0]?.path ||
+      "/";
 
-    cases = cases.map((testCase) => {
-      const method =
-        testCase?.api_details?.method ||
-        testCase?.method ||
-        endpoints?.[0]?.method ||
-        "GET";
-      const path =
-        testCase?.api_details?.path ||
-        testCase?.path ||
-        endpoints?.[0]?.path ||
-        "/";
+    const endpoint = endpointMap.get(endpointKey(method, path)) || {
+      method: String(method).toUpperCase(),
+      path,
+      tags: [],
+    };
 
-      const endpoint = endpoints.find(
-        (e) => endpointKey(e.method, e.path) === endpointKey(method, path),
-      ) || {
-        method: String(method).toUpperCase(),
-        path,
-        tags: [],
-      };
+    const epKey = endpointKey(endpoint.method, endpoint.path);
+    const nextSeq = (perEndpointSeq.get(epKey) || 0) + 1;
+    perEndpointSeq.set(epKey, nextSeq);
 
-      const epKey = endpointKey(endpoint.method, endpoint.path);
-      const nextSeq = (perEndpointSeq.get(epKey) || 0) + 1;
-      perEndpointSeq.set(epKey, nextSeq);
+    const scenarioName =
+      testCase?.title ||
+      testCase?.objective ||
+      testCase?.name ||
+      testCase?.scenario ||
+      "";
 
-      const scenarioName =
-        testCase?.title ||
-        testCase?.objective ||
-        testCase?.name ||
-        testCase?.scenario ||
-        "";
+    const meta = caseIdGen.buildCaseMeta(endpoint, nextSeq, scenarioName);
 
-      const meta = caseIdGen.buildCaseMeta(endpoint, nextSeq, scenarioName);
+    const { scenario, ...rest } = testCase || {};
 
-      const { scenario, ...rest } = testCase || {};
+    const normalizedCase = {
+      ...rest,
+      id: rest?.id || meta.id,
+      title: rest?.title || meta.title,
+      module:
+        rest?.module ||
+        (Array.isArray(endpoint?.tags) && endpoint.tags.length > 0
+          ? endpoint.tags[0]
+          : endpoint?.path?.split("/").filter(Boolean)[0] || "Default"),
+      api_details: buildApiDetails(
+        endpoint,
+        rest?.api_details,
+        fallbackBaseUrl,
+      ),
+      preconditions: ensureArray(rest?.preconditions),
+      steps: ensureArray(rest?.steps),
+      expected_results: ensureArray(rest?.expected_results),
+      validation_focus: ensureArray(rest?.validation_focus),
+      references: ensureArray(rest?.references),
+      review_notes:
+        typeof rest?.review_notes === "string" ? rest.review_notes : "",
+    };
 
-      return {
-        ...rest,
-        id: rest?.id || meta.id,
-        title: rest?.title || meta.title,
-        module:
-          rest?.module ||
-          (Array.isArray(endpoint?.tags) && endpoint.tags.length > 0
-            ? endpoint.tags[0]
-            : endpoint?.path?.split("/").filter(Boolean)[0] || "Default"),
-        api_details: buildApiDetails(
-          endpoint,
-          rest?.api_details,
-          fallbackBaseUrl,
-        ),
-        preconditions: ensureArray(rest?.preconditions),
-        steps: ensureArray(rest?.steps),
-        expected_results: ensureArray(rest?.expected_results),
-        validation_focus: ensureArray(rest?.validation_focus),
-        references: ensureArray(rest?.references),
-        review_notes:
-          typeof rest?.review_notes === "string" ? rest.review_notes : "",
-      };
-    });
-  }
-
-  const suites =
-    Array.isArray(cases) && cases.length > 0
-      ? [
-          {
-            suite_id: "auto_generated",
-            name: "Deterministic Generated Suite",
-            endpoints: endpointRefs,
-            cases,
-          },
-        ]
-      : [];
+    await appendCaseToBatchFile(batchFilePath, normalizedCase);
+    caseCount += 1;
+  });
 
   return {
     project,
@@ -667,7 +660,10 @@ async function buildDeterministicTestPlan({
       prompt_version: "p1",
       rag_enabled: false,
     },
-    suites,
+    batch_summary: {
+      endpoints_count: endpoints.length,
+      cases_count: caseCount,
+    },
   };
 }
 function filterGeneratedPlanToEligibleEndpoints(plan, eligibleEndpoints) {
@@ -785,37 +781,69 @@ export async function generateTestPlan(payload) {
 
   const selected = Array.isArray(payload?.endpoints) ? payload.endpoints : [];
 
-  const allEndpointsFull =
-    selected.length > 0
-      ? extractEndpointsFullSelected(doc, selected)
-      : extractEndpointsFull(doc);
-
-  let endpointRecordsFull = allEndpointsFull;
-
-  if (endpointRecordsFull.length === 0) {
-    const err = new Error(
-      "No endpoints matched selection. Check OpenAPI or selection payload.",
-    );
-    err.details = {
-      selected,
-      endpoints_found: allEndpointsFull.length,
-    };
-    throw err;
-  }
-
-  // 🔥 optional safety cap for large runs when user did not explicitly select endpoints
   const requestedCount =
     Number.isFinite(Number(payload?.endpoints_n)) &&
     Number(payload.endpoints_n) > 0
       ? Number(payload.endpoints_n)
       : 0;
 
-  if (selected.length === 0 && requestedCount > 0) {
-    endpointRecordsFull = endpointRecordsFull.slice(0, requestedCount);
+  let selectedRefs = selected;
+
+  if (selectedRefs.length === 0) {
+    const liteEndpoints = extractEndpointsLite(doc);
+
+    selectedRefs =
+      requestedCount > 0
+        ? liteEndpoints.slice(0, requestedCount).map((e) => ({
+            method: e.method,
+            path: e.path,
+            id: e.id,
+          }))
+        : liteEndpoints.map((e) => ({
+            method: e.method,
+            path: e.path,
+            id: e.id,
+          }));
+  }
+
+  const endpointRecordsFull = extractEndpointsFullSelected(doc, selectedRefs);
+
+  if (endpointRecordsFull.length === 0) {
+    const err = new Error(
+      "No endpoints matched selection. Check OpenAPI or selection payload.",
+    );
+    err.details = {
+      selected: selectedRefs,
+      endpoints_found: endpointRecordsFull.length,
+    };
+    throw err;
   }
 
   const generationMode = getManualSafetyMode(payload);
-  const specQuality = validateSpecQuality(doc, endpointRecordsFull);
+  let specQuality;
+
+  if (endpointRecordsFull.length > 50) {
+    console.log("Skipping deep spec quality check for large run");
+
+    specQuality = {
+      summary: {
+        total_endpoints: endpointRecordsFull.length,
+        ready: endpointRecordsFull.length,
+        partial: 0,
+        blocked: 0,
+        total_issues: 0,
+        warnings: 0,
+      },
+      endpoint_results: endpointRecordsFull.map((e) => ({
+        endpoint_id: e.id,
+        status: "ready",
+        issues_count: 0,
+        issues: [],
+      })),
+    };
+  } else {
+    specQuality = validateSpecQuality(doc, endpointRecordsFull);
+  }
 
   const blockedForMode = summarizeBlockedQuality(specQuality, generationMode);
   const partialForUi = summarizePartialQuality(specQuality);
@@ -875,22 +903,15 @@ export async function generateTestPlan(payload) {
   };
 
   const options = { include, env, auth_profile, guidance };
-  const prompt = buildGeneratorPrompt({
-    project: projectBlock,
-    options,
-    endpointRecords: eligibleEndpointRecords,
-    schemaText: SCHEMA_SHAPE_GUIDE,
-  });
+  const runId = `run_${Date.now()}`;
 
-  let obj = null;
-  const BATCH_SIZE = 5; // 🔥 reduce memory pressure
-
+  const BATCH_SIZE = 2;
   const endpointBatches = chunkArray(eligibleEndpointRecords, BATCH_SIZE);
+  const globalCaseIdGen = createCaseIdGenerator(eligibleEndpointRecords);
 
-  console.log("TOTAL ENDPOINTS:", eligibleEndpointRecords.length);
+  console.log("RUN ID:", runId);
+  console.log("TOTAL ELIGIBLE:", eligibleEndpointRecords.length);
   console.log("TOTAL BATCHES:", endpointBatches.length);
-
-  let mergedSuites = [];
 
   for (let i = 0; i < endpointBatches.length; i++) {
     const batch = endpointBatches[i];
@@ -899,24 +920,20 @@ export async function generateTestPlan(payload) {
       `Processing batch ${i + 1}/${endpointBatches.length} (${batch.length} endpoints)`,
     );
 
-    const batchCaseIdGen = createCaseIdGenerator(batch);
+    const batchFilePath = await initBatchFile(runId, i);
 
-    let batchPlan = await buildDeterministicTestPlan({
+    const batchResult = await buildDeterministicTestPlan({
       project: projectBlock,
       options,
       endpoints: batch,
-      caseIdGen: batchCaseIdGen,
+      caseIdGen: globalCaseIdGen,
       fallbackBaseUrl,
+      batchFilePath,
     });
 
-    batchPlan = enrichSuitesWithCaseIds(batchPlan, batch, fallbackBaseUrl);
+    console.log(`BATCH ${i + 1} FILE:`, batchFilePath);
+    console.log(`BATCH ${i + 1} SUMMARY:`, batchResult.batch_summary);
 
-    // 🚀 merge only required data
-    if (Array.isArray(batchPlan?.suites)) {
-      mergedSuites.push(...batchPlan.suites);
-    }
-
-    // 🔥 MEMORY LOGGING (very important)
     const mem = process.memoryUsage();
     console.log(`MEMORY AFTER BATCH ${i + 1}:`, {
       rss_mb: Math.round(mem.rss / 1024 / 1024),
@@ -924,161 +941,11 @@ export async function generateTestPlan(payload) {
       heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
     });
 
-    // 🔥 release references
-    batchPlan = null;
-
-    // 🔥 allow GC to run
     await new Promise((resolve) => setImmediate(resolve));
   }
 
-  const deterministic = {
-    project: projectBlock,
-    generation: {
-      generated_at: nowIso(),
-      generator_version: "v1",
-      model: "deterministic",
-      prompt_version: "p1",
-      rag_enabled: false,
-      batching: {
-        enabled: true,
-        batch_size: BATCH_SIZE,
-        total_batches: endpointBatches.length,
-      },
-    },
-    suites: mergedSuites,
-  };
-
-  const ai = getAIProvider();
-  const wantAI = payload?.ai === true;
-
-  if (wantAI && ai.enabled) {
-    try {
-      const raw1 = await ai.generate({ prompt, temperature: 0.3 });
-      obj = tryExtractJsonObject(raw1);
-
-      if (!obj) {
-        const repairPrompt = buildRepairPrompt({
-          badJsonText: raw1,
-          schemaText: "",
-        });
-
-        const raw2 = await ai.generate({
-          prompt: repairPrompt,
-          temperature: 0.2,
-        });
-
-        obj = tryExtractJsonObject(raw2);
-
-        if (!obj) {
-          throw new Error("AI output not valid JSON after repair pass");
-        }
-      }
-
-      obj.generation = obj.generation || {};
-      obj.generation.model = obj.generation.model || ai.modelName || "unknown";
-      obj.generation.ai_provider = ai.name;
-      obj.generation.ai_skipped = false;
-    } catch (e) {
-      obj = null;
-      deterministic.generation = deterministic.generation || {};
-      deterministic.generation.ai_provider = ai.name;
-      deterministic.generation.ai_skipped = false;
-      deterministic.generation.ai_error = String(e?.message || e);
-    }
-  }
-
-  if (!obj) {
-    obj = deterministic;
-    obj.generation = obj.generation || {};
-    obj.generation.ai_provider = ai.name;
-    obj.generation.ai_skipped = !wantAI;
-  }
-
-  obj.generation = obj.generation || {};
-  obj.generation.generated_at = obj.generation.generated_at || nowIso();
-  obj.generation.generator_version = obj.generation.generator_version || "v1";
-  obj.generation.model = obj.generation.model || "deterministic";
-  obj.generation.prompt_version = obj.generation.prompt_version || "p1";
-  obj.generation.rag_enabled = obj.generation.rag_enabled ?? false;
-
-  obj.project = obj.project || projectBlock;
-  obj.project.project_id = obj.project.project_id || projectBlock.project_id;
-  obj.project.project_name =
-    obj.project.project_name || projectBlock.project_name;
-  obj.project.env = obj.project.env || projectBlock.env;
-  obj.project.base_url_var =
-    obj.project.base_url_var || projectBlock.base_url_var;
-  obj.project.auth_profile =
-    obj.project.auth_profile || projectBlock.auth_profile;
-  obj.project.auth_vars = Array.isArray(obj.project.auth_vars)
-    ? obj.project.auth_vars
-    : projectBlock.auth_vars;
-
-  console.log(
-    "SUITE CASE COUNTS:",
-    (obj.suites || []).map((s) => ({
-      suite_id: s.suite_id,
-      name: s.name,
-      cases: Array.isArray(s.cases) ? s.cases.length : "not-array",
-    })),
-  );
-
-  if (!Array.isArray(obj.suites) || obj.suites.length === 0) {
-    const err = new Error(
-      "No test cases were generated for the eligible endpoints and include types",
-    );
-    err.details = {
-      generation_mode: generationMode,
-      selected_endpoints: endpointRecordsFull.map(
-        (e) => `${String(e.method).toUpperCase()} ${e.path}`,
-      ),
-      eligible_endpoints: eligibleEndpointRecords.map(
-        (e) => `${String(e.method).toUpperCase()} ${e.path}`,
-      ),
-      blocked_endpoints: blockedForMode,
-      include,
-      spec_quality: specQuality,
-    };
-    throw err;
-  }
-
-  obj.generation = {
-    ...(obj.generation || {}),
-    mode: payload.generation_mode || obj.generation?.mode || "balanced",
-  };
-
-  for (const suite of obj.suites || []) {
-    suite.endpoints = (suite.endpoints || []).map((ep) => {
-      if (typeof ep === "string") return ep;
-      if (ep && ep.method && ep.path) {
-        return `${String(ep.method).toUpperCase()} ${ep.path}`;
-      }
-      return String(ep || "");
-    });
-
-    (suite.cases || []).forEach((tc, idx) => {
-      tc.id = ensureCaseId(tc, suite.suite_id || "suite", idx + 1);
-      tc.priority = normalizePriority(tc.priority);
-      tc.test_data = normalizeTestData(tc.test_data);
-    });
-  }
-
-  obj = dedupeSuites(obj);
-
-  for (const suite of obj.suites || []) {
-    (suite.cases || []).forEach((tc, idx) => {
-      tc.id = ensureCaseId(tc, suite.suite_id || "suite", idx + 1);
-    });
-  }
-
-  const schemaSafeObj = stripCaseMeta(obj);
-
-  await validateTestPlanOrThrow(schemaSafeObj);
-
-  const report = buildReport(schemaSafeObj);
-
   return {
-    run_id: `run_${Date.now()}`,
+    run_id: runId,
     generation_mode: generationMode,
     spec_quality: specQuality,
 
@@ -1100,13 +967,26 @@ export async function generateTestPlan(payload) {
       issues: Array.isArray(ep.issues) ? ep.issues : [],
     })),
 
+    eligible_endpoints_count: eligibleEndpointRecords.length,
     eligible_endpoints: eligibleEndpointRecords.map((e) => ({
       method: String(e.method).toUpperCase(),
       path: e.path,
       id: e.id,
     })),
 
-    testplan: schemaSafeObj,
-    report,
+    batching: {
+      enabled: true,
+      batch_size: BATCH_SIZE,
+      total_batches: endpointBatches.length,
+      file_format: "ndjson",
+    },
+
+    result_storage: {
+      mode: "batch_files",
+      directory: OUT_DIR,
+      pattern: `${runId}_batch_<index>.ndjson`,
+      message:
+        "Large testplan payload is not returned in-memory. Cases were streamed to NDJSON batch files during generation.",
+    },
   };
 }

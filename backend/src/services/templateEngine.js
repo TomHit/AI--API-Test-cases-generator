@@ -43,10 +43,11 @@ function buildDedupKey(tc) {
     )
     .join("|");
 }
+
 /* =========================
    MAIN ENGINE
 ========================= */
-export async function generateCasesForEndpoint(endpoint, options = {}) {
+export async function generateCasesForEndpoint(endpoint, options = {}, onCase) {
   const include = normalizeInclude(options.include);
 
   const resolvedData = resolveEndpointTestData(endpoint);
@@ -68,7 +69,6 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
     requestBodyRequired: !!endpoint?.requestBody?.required,
   };
 
-  const cases = [];
   const dedup = new Set();
 
   let scenarioPlans = buildScenarioPlans(enrichedEndpoint, profile, []);
@@ -89,23 +89,29 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
 
     if (!dedup.has(key)) {
       dedup.add(key);
-      cases.push(tc);
+
+      if (typeof onCase === "function") {
+        await onCase(tc, endpoint, plan);
+      }
     }
   }
-
-  return cases;
 }
 
 /* =========================
    MULTI ENDPOINT
 ========================= */
-export async function generateCasesForEndpoints(endpoints = [], options = {}) {
-  const out = [];
-
+export async function generateCasesForEndpoints(
+  endpoints = [],
+  options = {},
+  onCase,
+) {
   for (const endpoint of endpoints) {
-    const cases = await generateCasesForEndpoint(endpoint, options);
-    out.push(...cases);
-  }
+    console.log(
+      `Processing endpoint: ${String(endpoint?.method || "GET").toUpperCase()} ${endpoint?.path || "/"}`,
+    );
 
-  return out;
+    await generateCasesForEndpoint(endpoint, options, onCase);
+
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }

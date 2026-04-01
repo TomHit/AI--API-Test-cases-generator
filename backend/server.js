@@ -12,6 +12,8 @@ import {
 import { createJob, getJob, listJobs } from "./src/jobs/jobStore.js";
 import { runGenerationJob } from "./src/jobs/generationWorker.js";
 
+import { validateSpecQuality } from "./src/services/specQualityValidator.js";
+
 process.on("uncaughtException", (err) =>
   console.error("UNCAUGHT EXCEPTION:", err),
 );
@@ -32,6 +34,61 @@ app.use((req, res, next) => {
 });
 
 const PROJECTS_DIR = path.join(process.cwd(), "projects");
+const JOB_RESULTS_DIR = path.join(process.cwd(), "job-results");
+
+async function readRunCases(runId) {
+  await fs.mkdir(JOB_RESULTS_DIR, { recursive: true });
+
+  const entries = await fs.readdir(JOB_RESULTS_DIR, { withFileTypes: true });
+
+  const files = entries
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.startsWith(`${runId}_batch_`) &&
+        entry.name.endsWith(".ndjson"),
+    )
+    .map((entry) => entry.name)
+    .sort((a, b) => {
+      const getBatchIndex = (name) => {
+        const match = name.match(/_batch_(\d+)\.ndjson$/);
+        return match ? Number(match[1]) : 0;
+      };
+      return getBatchIndex(a) - getBatchIndex(b);
+    });
+
+  if (files.length === 0) {
+    return {
+      files: [],
+      cases: [],
+    };
+  }
+
+  const cases = [];
+
+  for (const fileName of files) {
+    const fullPath = path.join(JOB_RESULTS_DIR, fileName);
+    const raw = await fs.readFile(fullPath, "utf-8");
+
+    const lines = raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (const line of lines) {
+      try {
+        cases.push(JSON.parse(line));
+      } catch (err) {
+        console.error("NDJSON PARSE ERROR:", fileName, err);
+      }
+    }
+  }
+
+  return {
+    files,
+    cases,
+  };
+}
 
 function summarizeGenerateRequest(payload = {}) {
   return {
@@ -195,7 +252,24 @@ app.get("/api/projects/:id/endpoints/full", async (req, res) => {
     });
 
     const endpoints = extractEndpointsFull(doc);
-    res.json(endpoints);
+    const quality = validateSpecQuality(doc, { mode: "balanced" });
+
+    const statusMap = new Map(
+      (quality?.endpoint_results || []).map((e) => [e.endpoint_id, e]),
+    );
+
+    const enriched = endpoints.map((e) => {
+      const q = statusMap.get(e.id) || {};
+
+      return {
+        ...e,
+        issues: q.issues || [],
+        issues_count: q.issues_count || 0,
+        status: q.status || "unknown",
+      };
+    });
+
+    res.json(enriched);
   } catch (e) {
     console.error("FULL ENDPOINTS ERROR:", e);
     res.status(400).json({ message: e?.message || String(e) });
@@ -327,6 +401,34 @@ app.get("/api/jobs", (_req, res) => {
     });
   } catch (e) {
     console.error("JOBS LIST ERROR:", e);
+    return res.status(500).json({
+      ok: false,
+      message: e?.message || String(e),
+    });
+  }
+});
+app.get("/api/runs/:runId/cases", async (req, res) => {
+  try {
+    const runId = String(req.params.runId || "").trim();
+
+    if (!runId) {
+      return res.status(400).json({
+        ok: false,
+        message: "runId is required",
+      });
+    }
+
+    const result = await readRunCases(runId);
+
+    return res.json({
+      ok: true,
+      run_id: runId,
+      total_cases: result.cases.length,
+      files: result.files,
+      cases: result.cases,
+    });
+  } catch (e) {
+    console.error("RUN CASES ERROR:", e);
     return res.status(500).json({
       ok: false,
       message: e?.message || String(e),

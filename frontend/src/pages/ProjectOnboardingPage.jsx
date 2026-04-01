@@ -29,7 +29,7 @@ const INITIAL_FINDINGS = [
   },
 ];
 
-export default function ProjectOnboardingPage() {
+export default function ProjectOnboardingPage({ onContinueToGeneration }) {
   const [githubLink, setGithubLink] = useState("");
   const [apiSpecLink, setApiSpecLink] = useState("");
   const [projectNotes, setProjectNotes] = useState("");
@@ -372,9 +372,16 @@ export default function ProjectOnboardingPage() {
               <button
                 className="io-btn io-btn-primary"
                 type="button"
-                disabled={!analysisDone}
+                onClick={() => {
+                  console.log("Continue button clicked");
+                  if (typeof onContinueToGeneration === "function") {
+                    onContinueToGeneration();
+                  } else {
+                    console.error("onContinueToGeneration is missing");
+                  }
+                }}
               >
-                Continue to Test Generation
+                Continue to Project
               </button>
             </div>
           </section>

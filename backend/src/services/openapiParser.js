@@ -62,7 +62,6 @@ export function extractEndpointsFullSelected(openapiDoc, selectedRefs = []) {
         params,
         requestBody,
         response,
-        responses: clone(op?.responses || {}),
       });
     }
   }
@@ -177,62 +176,76 @@ function buildSwagger2ParamSchema(param = {}) {
 function normalizeSchema(schema, openapiDoc, seenRefs = new Set()) {
   if (!isObject(schema)) return null;
 
+  let source = schema;
+
   if (schema.$ref) {
     const ref = schema.$ref;
-    if (seenRefs.has(ref)) return clone(schema);
 
-    const resolved = resolveRef(ref, openapiDoc);
-    if (!resolved) return clone(schema);
-
-    const nextSeen = new Set(seenRefs);
-    nextSeen.add(ref);
-
-    const merged = normalizeSchema(resolved, openapiDoc, nextSeen) || {};
-    return {
-      ...clone(merged),
-      ...Object.fromEntries(
-        Object.entries(schema).filter(([k]) => k !== "$ref"),
-      ),
-    };
-  }
-
-  const out = clone(schema);
-
-  if (isObject(out.properties)) {
-    const newProps = {};
-    for (const [key, value] of Object.entries(out.properties)) {
-      newProps[key] = normalizeSchema(value, openapiDoc, seenRefs);
+    if (!seenRefs.has(ref)) {
+      const resolved = resolveRef(ref, openapiDoc);
+      if (isObject(resolved)) {
+        source = resolved;
+        seenRefs = new Set(seenRefs);
+        seenRefs.add(ref);
+      }
     }
-    out.properties = newProps;
   }
 
-  if (out.items) {
-    out.items = normalizeSchema(out.items, openapiDoc, seenRefs);
-  }
+  const summary = {
+    ...(schema.$ref ? { $ref: schema.$ref } : {}),
+    type: source.type || (isObject(source.properties) ? "object" : undefined),
+    format: source.format,
+    enum: Array.isArray(source.enum)
+      ? clone(source.enum.slice(0, 10))
+      : undefined,
+    required: Array.isArray(source.required)
+      ? clone(source.required.slice(0, 20))
+      : undefined,
+    properties: isObject(source.properties)
+      ? Object.keys(source.properties).slice(0, 30)
+      : undefined,
+    items: isObject(source.items)
+      ? {
+          type:
+            source.items.type ||
+            (isObject(source.items.properties) ? "object" : undefined),
+          format: source.items.format,
+          enum: Array.isArray(source.items.enum)
+            ? clone(source.items.enum.slice(0, 10))
+            : undefined,
+          properties: isObject(source.items.properties)
+            ? Object.keys(source.items.properties).slice(0, 20)
+            : undefined,
+        }
+      : undefined,
+    allOf: Array.isArray(source.allOf) ? source.allOf.length : undefined,
+    oneOf: Array.isArray(source.oneOf) ? source.oneOf.length : undefined,
+    anyOf: Array.isArray(source.anyOf) ? source.anyOf.length : undefined,
+    additionalProperties:
+      source.additionalProperties === true
+        ? true
+        : isObject(source.additionalProperties)
+          ? {
+              type:
+                source.additionalProperties.type ||
+                (isObject(source.additionalProperties.properties)
+                  ? "object"
+                  : undefined),
+            }
+          : undefined,
+    pattern: source.pattern,
+    minLength: source.minLength,
+    maxLength: source.maxLength,
+    minimum: source.minimum,
+    maximum: source.maximum,
+    nullable: source.nullable,
+    deprecated: source.deprecated,
+  };
 
-  if (Array.isArray(out.allOf)) {
-    out.allOf = out.allOf.map((x) => normalizeSchema(x, openapiDoc, seenRefs));
-  }
-
-  if (Array.isArray(out.oneOf)) {
-    out.oneOf = out.oneOf.map((x) => normalizeSchema(x, openapiDoc, seenRefs));
-  }
-
-  if (Array.isArray(out.anyOf)) {
-    out.anyOf = out.anyOf.map((x) => normalizeSchema(x, openapiDoc, seenRefs));
-  }
-
-  if (out.additionalProperties && isObject(out.additionalProperties)) {
-    out.additionalProperties = normalizeSchema(
-      out.additionalProperties,
-      openapiDoc,
-      seenRefs,
-    );
-  }
-
-  return out;
+  return Object.fromEntries(
+    Object.entries(summary).filter(([, value]) => value !== undefined),
+  );
 }
-
 function resolveParameterObject(p, openapiDoc, seenRefs = new Set()) {
   if (!isObject(p)) return null;
 
@@ -413,7 +426,7 @@ function normalizeMediaContent(content = {}, openapiDoc) {
 
     out[contentType] = {
       example: pickExample(media) ?? pickExample(schema),
-      schema,
+      schema: undefined,
       schemaSummary: summarizeSchema(schema),
     };
   }
@@ -442,7 +455,7 @@ function buildSwagger2RequestBody(pathItem, op, openapiDoc) {
       const schema = normalizeSchema(bodyParam.schema, openapiDoc);
       content[contentType] = {
         example: pickExample(bodyParam) ?? pickExample(schema),
-        schema,
+        schema: undefined,
         schemaSummary: summarizeSchema(schema),
       };
     }
@@ -608,7 +621,7 @@ function normalizeSwagger2Response(responseObj, produces, openapiDoc) {
 
     content[contentType] = {
       example,
-      schema,
+      schema: undefined,
       schemaSummary: summarizeSchema(schema),
     };
   }
@@ -846,7 +859,6 @@ export function extractEndpointsFull(openapiDoc) {
         params,
         requestBody,
         response,
-        responses: clone(op?.responses || {}),
       });
     }
   }
