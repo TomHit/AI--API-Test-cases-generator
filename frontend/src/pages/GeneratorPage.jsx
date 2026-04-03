@@ -15,7 +15,7 @@ const RUNNING_STEPS = [
 const DEFAULT_OPTIONS = {
   env: "staging",
   auth_profile: "",
-  include: ["contract", "schema"],
+  include: ["contract", "schema", "negative", "auth"],
   ai: false,
   generation_mode: "balanced",
   spec_source: "",
@@ -187,6 +187,14 @@ export default function GeneratorPage({
     ...(options || {}),
     ...(generatorSettings || {}),
   };
+  const safeInclude = Array.from(
+    new Set(
+      Array.isArray(resolvedOptions.include) &&
+        resolvedOptions.include.length > 0
+        ? resolvedOptions.include
+        : ["contract", "schema", "negative", "auth"],
+    ),
+  );
 
   const [endpointsLoading, setEndpointsLoading] = useState(true);
   const [endpointsErr, setEndpointsErr] = useState("");
@@ -557,11 +565,7 @@ export default function GeneratorPage({
       created_by: userId,
       env: resolvedOptions.env,
       auth_profile: resolvedOptions.auth_profile,
-      include:
-        Array.isArray(resolvedOptions.include) &&
-        resolvedOptions.include.length > 0
-          ? resolvedOptions.include
-          : ["contract", "schema"],
+      include: safeInclude,
       guidance: resolvedOptions.guidance,
       endpoints: endpointRefs,
       ai: !!resolvedOptions.ai,

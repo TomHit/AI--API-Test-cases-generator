@@ -2,6 +2,30 @@ import React from "react";
 
 const TEST_TYPES = ["contract", "schema", "negative", "auth"];
 
+const DEFAULT_FORM_OPTIONS = {
+  ai: false,
+  env: "staging",
+  auth_profile: "",
+  generation_mode: "balanced",
+  spec_source: "",
+  guidance: "",
+  include: ["contract", "schema", "negative", "auth"],
+};
+
+function normalizeFormOptions(value = {}) {
+  return {
+    ...DEFAULT_FORM_OPTIONS,
+    ...(value || {}),
+    include: Array.from(
+      new Set(
+        Array.isArray(value?.include) && value.include.length > 0
+          ? value.include
+          : DEFAULT_FORM_OPTIONS.include,
+      ),
+    ),
+  };
+}
+
 function TogglePill({ checked, label, onChange }) {
   return (
     <label
@@ -62,60 +86,41 @@ function RadioCard({ checked, title, help, onChange }) {
 }
 
 export default function GenerationOptions({ options, onChange }) {
-  const safeOptions = {
-    ai: false,
-    env: "staging",
-    auth_profile: "",
-    generation_mode: "balanced",
-    spec_source: "",
-    guidance: "",
-    ...(options || {}),
-    include:
-      Array.isArray(options?.include) && options.include.length > 0
-        ? options.include
-        : ["contract", "schema", "negative", "auth"],
-  };
-
+  const safeOptions = normalizeFormOptions(options || {});
   const safeOnChange = typeof onChange === "function" ? onChange : () => {};
+
+  function updateField(field, value) {
+    safeOnChange((prev) => ({
+      ...normalizeFormOptions(prev || {}),
+      [field]: value,
+    }));
+  }
 
   function toggleInclude(key) {
     safeOnChange((prev) => {
-      const next = {
-        ai: false,
-        env: "staging",
-        auth_profile: "",
-        generation_mode: "balanced",
-        spec_source: "",
-        guidance: "",
-        ...(prev || {}),
-      };
-
-      const set = new Set(Array.isArray(next.include) ? next.include : []);
+      const next = normalizeFormOptions(prev || {});
+      const set = new Set(next.include);
 
       if (set.has(key)) set.delete(key);
       else set.add(key);
 
+      const include = Array.from(set);
+
       return {
         ...next,
-        include: Array.from(set),
+        include:
+          include.length > 0 ? include : [...DEFAULT_FORM_OPTIONS.include],
       };
     });
   }
 
   function selectRecommended() {
     safeOnChange((prev) => ({
-      ai: false,
-      env: "staging",
-      auth_profile: "",
-      generation_mode: "balanced",
-      spec_source: "",
-      guidance: "",
-      ...(prev || {}),
+      ...normalizeFormOptions(prev || {}),
       include: ["contract", "schema"],
       generation_mode: "balanced",
     }));
   }
-
   return (
     <div style={styles.wrap}>
       <div style={styles.heroNote}>
@@ -185,12 +190,7 @@ export default function GenerationOptions({ options, onChange }) {
             <div style={styles.label}>Environment</div>
             <input
               value={safeOptions.env || ""}
-              onChange={(e) =>
-                safeOnChange({
-                  ...safeOptions,
-                  env: e.target.value,
-                })
-              }
+              onChange={(e) => updateField("env", e.target.value)}
               placeholder="staging"
               style={styles.input}
             />
@@ -200,12 +200,7 @@ export default function GenerationOptions({ options, onChange }) {
             <div style={styles.label}>Auth Profile</div>
             <input
               value={safeOptions.auth_profile || ""}
-              onChange={(e) =>
-                safeOnChange({
-                  ...safeOptions,
-                  auth_profile: e.target.value,
-                })
-              }
+              onChange={(e) => updateField("auth_profile", e.target.value)}
               placeholder="device"
               style={styles.input}
             />
@@ -254,12 +249,7 @@ export default function GenerationOptions({ options, onChange }) {
         <div style={styles.label}>Swagger / OpenAPI URL</div>
         <input
           value={safeOptions.spec_source || ""}
-          onChange={(e) =>
-            safeOnChange({
-              ...safeOptions,
-              spec_source: e.target.value,
-            })
-          }
+          onChange={(e) => updateField("spec_source", e.target.value)}
           placeholder="https://app.example.com/openapi.json"
           style={styles.input}
         />
@@ -276,12 +266,7 @@ export default function GenerationOptions({ options, onChange }) {
         <div style={styles.label}>Optional notes for generation</div>
         <textarea
           value={safeOptions.guidance || ""}
-          onChange={(e) =>
-            safeOnChange({
-              ...safeOptions,
-              guidance: e.target.value,
-            })
-          }
+          onChange={(e) => updateField("guidance", e.target.value)}
           placeholder="Focus on contract and schema validation. Keep steps clear for manual testers."
           style={styles.textarea}
         />

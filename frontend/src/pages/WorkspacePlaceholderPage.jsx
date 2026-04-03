@@ -9,12 +9,26 @@ import ProjectOnboardingPage from "./ProjectOnboardingPage";
 const DEFAULT_GENERATOR_SETTINGS = {
   env: "staging",
   auth_profile: "",
-  include: ["contract", "schema"],
+  include: ["contract", "schema", "negative", "auth"],
   ai: false,
   generation_mode: "balanced",
   spec_source: "",
   guidance: "",
 };
+
+function normalizeGeneratorSettings(value = {}) {
+  return {
+    ...DEFAULT_GENERATOR_SETTINGS,
+    ...(value || {}),
+    include: Array.from(
+      new Set(
+        Array.isArray(value?.include) && value.include.length > 0
+          ? value.include
+          : DEFAULT_GENERATOR_SETTINGS.include,
+      ),
+    ),
+  };
+}
 
 export default function WorkspacePlaceholderPage() {
   const location = useLocation();
@@ -41,6 +55,9 @@ export default function WorkspacePlaceholderPage() {
   const [generatorSettings, setGeneratorSettings] = useState(
     DEFAULT_GENERATOR_SETTINGS,
   );
+  const [runGeneratorSettings, setRunGeneratorSettings] = useState(
+    DEFAULT_GENERATOR_SETTINGS,
+  );
   const [generatedRun, setGeneratedRun] = useState(null);
 
   const organization = useMemo(() => {
@@ -57,6 +74,8 @@ export default function WorkspacePlaceholderPage() {
 
   function handleOpenProject(projectId) {
     setSelectedProjectId(projectId);
+    setGeneratedRun(null);
+    setRunGeneratorSettings(normalizeGeneratorSettings(generatorSettings));
     setActiveNav("generate");
   }
 
@@ -86,12 +105,11 @@ export default function WorkspacePlaceholderPage() {
             onOpenProject={handleOpenProject}
           />
         );
-
       case "generate":
         return (
           <GeneratorPage
             selectedProjectId={selectedProjectId}
-            generatorSettings={generatorSettings}
+            generatorSettings={runGeneratorSettings}
             activeSection="generate"
             generatedRun={generatedRun}
             onSaveGeneratedRun={setGeneratedRun}
@@ -105,7 +123,7 @@ export default function WorkspacePlaceholderPage() {
         return (
           <GeneratorPage
             selectedProjectId={selectedProjectId}
-            generatorSettings={generatorSettings}
+            generatorSettings={runGeneratorSettings}
             activeSection="testCases"
             generatedRun={generatedRun}
             onSaveGeneratedRun={setGeneratedRun}

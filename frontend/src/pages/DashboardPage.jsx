@@ -353,12 +353,12 @@ export default function DashboardPage({
               options={
                 generatorSettings || {
                   env: "staging",
-                  auth_profile: "none",
-                  include: ["contract", "schema"],
+                  auth_profile: "",
+                  include: ["contract", "schema", "negative", "auth"],
                   ai: false,
-                  endpoints_n: 10,
-                  guidance_len: 0,
-                  spec_url: "",
+                  generation_mode: "balanced",
+                  spec_source: "",
+                  guidance: "",
                 }
               }
               onChange={onChangeGeneratorSettings || (() => {})}

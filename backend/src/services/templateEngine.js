@@ -166,7 +166,13 @@ export async function generateCasesForEndpoint(endpoint, options = {}) {
   pushUniqueCases(cases, dedup, templateCases);
 
   // 2) Scenario engine cases (negative + auth, or whatever buildScenarioPlans returns)
-  let scenarioPlans = buildScenarioPlans(enrichedEndpoint, profile, []);
+  const matchedRules = options.matchedRules || [];
+
+  let scenarioPlans = buildScenarioPlans(
+    enrichedEndpoint,
+    profile,
+    matchedRules,
+  );
 
   scenarioPlans = scenarioPlans.filter((plan) =>
     include.includes(String(plan?.test_type || "").toLowerCase()),
