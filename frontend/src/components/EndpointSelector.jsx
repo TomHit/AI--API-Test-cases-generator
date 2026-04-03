@@ -43,7 +43,12 @@ function groupEndpoints(endpoints) {
     .sort((a, b) => a.tag.localeCompare(b.tag));
 }
 
-export default function EndpointSelector({ endpoints, selection, onChange }) {
+export default function EndpointSelector({
+  endpoints,
+  selection,
+  onChange,
+  extraActions,
+}) {
   const [visibleCount, setVisibleCount] = useState(120);
   const [collapsedGroups, setCollapsedGroups] = useState({});
 
@@ -52,7 +57,7 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
   const allFiltered = useMemo(() => {
     const q = (selection?.filter?.q || "").toLowerCase().trim();
     const method = selection?.filter?.method || "ALL";
-    const authOnly = !!selection?.filter?.authOnly;
+
     const tag = selection?.filter?.tag || "ALL";
 
     return (endpoints || []).filter((e) => {
@@ -61,9 +66,7 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
 
       const matchQ = !q || haystack.includes(q);
       const matchMethod = method === "ALL" ? true : e.method === method;
-      const matchAuth = authOnly
-        ? Array.isArray(e.security) && e.security.length > 0
-        : true;
+      const matchAuth = true;
       const matchTag = tag === "ALL" ? true : (e.tags || []).includes(tag);
 
       return matchQ && matchMethod && matchAuth && matchTag;
@@ -191,15 +194,6 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
       </div>
 
       <div style={styles.toolbarInline}>
-        <label style={styles.checkboxRow}>
-          <input
-            type="checkbox"
-            checked={!!selection.filter.authOnly}
-            onChange={(e) => setFilter({ authOnly: e.target.checked })}
-          />
-          <span>Auth only</span>
-        </label>
-
         <div style={styles.inlineBtns}>
           <button type="button" style={styles.btn} onClick={selectAllVisible}>
             Select visible
@@ -207,6 +201,7 @@ export default function EndpointSelector({ endpoints, selection, onChange }) {
           <button type="button" style={styles.btn} onClick={clearAll}>
             Clear
           </button>
+          {extraActions}
         </div>
       </div>
 

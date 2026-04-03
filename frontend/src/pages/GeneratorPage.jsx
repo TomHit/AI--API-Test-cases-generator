@@ -1355,6 +1355,35 @@ export default function GeneratorPage({
                   endpoints={endpoints}
                   selection={selection}
                   onChange={setSelection}
+                  extraActions={
+                    <button
+                      type="button"
+                      onClick={generate}
+                      disabled={
+                        !resolvedProjectId ||
+                        run.status === "running" ||
+                        selectedCount === 0
+                      }
+                      style={{
+                        ...styles.primaryBtnSmall,
+                        opacity:
+                          !resolvedProjectId ||
+                          run.status === "running" ||
+                          selectedCount === 0
+                            ? 0.7
+                            : 1,
+                      }}
+                    >
+                      {run.status === "running" ? (
+                        <>
+                          <span className="gen-spinner" />
+                          <span>Generating...</span>
+                        </>
+                      ) : (
+                        "Generate Tests"
+                      )}
+                    </button>
+                  }
                 />
               )}
             </div>
@@ -1393,74 +1422,9 @@ export default function GeneratorPage({
                   </button>
                 </div>
               </div>
-
-              <button
-                type="button"
-                onClick={generate}
-                disabled={
-                  !resolvedProjectId ||
-                  run.status === "running" ||
-                  selectedCount === 0
-                }
-                style={{
-                  ...styles.primaryBtn,
-                  opacity:
-                    !resolvedProjectId ||
-                    run.status === "running" ||
-                    selectedCount === 0
-                      ? 0.7
-                      : 1,
-                }}
-              >
-                {run.status === "running" ? (
-                  <>
-                    <span className="gen-spinner" />
-                    <span>Generating...</span>
-                  </>
-                ) : (
-                  "Generate Tests"
-                )}
-              </button>
             </div>
           </aside>
-
           <section style={styles.rightPane}>
-            <div style={styles.resultsCard}>
-              <div
-                className="results-header"
-                style={styles.resultsHeader}
-              ></div>
-              <div>
-                <div style={styles.panelTitle}>Results</div>
-                <div style={styles.panelSubtle}>
-                  Generate tests here, then open the dedicated Test Cases tab
-                  for full review.
-                </div>
-              </div>
-
-              <div
-                className="results-top-actions"
-                style={styles.resultsTopActions}
-              >
-                <div style={styles.modeBadge}>
-                  {String(
-                    run.generation_mode ||
-                      resolvedOptions.generation_mode ||
-                      "balanced",
-                  ).toUpperCase()}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onViewTestCases?.()}
-                  disabled={!run.run_id || run.status === "running"}
-                  style={styles.secondaryBtn}
-                >
-                  View Test Cases
-                </button>
-              </div>
-            </div>
-
             {run.status === "running" ? (
               <div style={styles.runningCard}>
                 <div style={styles.runningTitle}>Generation in progress</div>
@@ -1539,7 +1503,8 @@ export default function GeneratorPage({
 const styles = {
   page: {
     display: "grid",
-    gap: 16,
+    gap: 18,
+    width: "100%",
   },
 
   notice: {
@@ -1551,22 +1516,46 @@ const styles = {
     fontSize: 14,
   },
 
+  topGenerateWrap: {
+    padding: "10px 12px 0",
+    display: "flex",
+    justifyContent: "flex-start",
+  },
+
+  primaryBtnSmall: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    padding: "9px 12px",
+    borderRadius: 12,
+    border: "none",
+    background: "linear-gradient(135deg, #2563eb, #4f46e5)",
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: 800,
+    cursor: "pointer",
+    boxShadow: "0 8px 18px rgba(37, 99, 235, 0.18)",
+  },
+
   mainGrid: {
     display: "grid",
-    gridTemplateColumns: "430px minmax(0, 1fr)",
-    gap: 20,
+    gridTemplateColumns: "400px minmax(0, 1fr)",
+    gap: 8,
     alignItems: "stretch",
     marginTop: -8,
+    marginLeft: -15,
+    width: "calc(100% + 16px)",
   },
   resultsCard: {
     display: "grid",
-    gap: 16,
-    padding: 18,
-    borderRadius: 20,
-    border: "1px solid rgba(148, 163, 184, 0.16)",
+    gap: 18,
+    padding: 20,
+    borderRadius: 24,
+    border: "1px solid rgba(148, 163, 184, 0.14)",
     background:
-      "linear-gradient(180deg, rgba(6, 18, 48, 0.72) 0%, rgba(4, 15, 40, 0.82) 100%)",
-    boxShadow: "0 10px 28px rgba(2, 8, 23, 0.24)",
+      "linear-gradient(180deg, rgba(6, 18, 48, 0.72) 0%, rgba(4, 15, 40, 0.84) 100%)",
+    boxShadow: "0 16px 40px rgba(2, 8, 23, 0.26)",
   },
 
   leftPane: {
@@ -1580,8 +1569,8 @@ const styles = {
     background: "#ffffff",
     overflow: "hidden",
     boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
-    maxHeight: "calc(100vh - 72px)",
-    minHeight: 0,
+    maxHeight: "calc(100vh - 8px)",
+    minHeight: 820,
     alignSelf: "start",
   },
 
@@ -1605,16 +1594,17 @@ const styles = {
 
   virtualTableWrap: {
     border: "1px solid #e5e7eb",
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: "hidden",
     background: "#ffffff",
+    width: "100%",
   },
 
   virtualHeader: {
     display: "flex",
     alignItems: "center",
-    padding: "0 14px",
-    minHeight: 48,
+    padding: "0 18px",
+    minHeight: 54,
     background: "#f8fafc",
     borderBottom: "1px solid #e5e7eb",
     position: "sticky",
@@ -1625,7 +1615,7 @@ const styles = {
   virtualHeaderCell: {
     display: "flex",
     alignItems: "center",
-    padding: "0 18px",
+    padding: "0 20px",
     minWidth: 0,
     overflow: "hidden",
     whiteSpace: "nowrap",
@@ -1640,7 +1630,7 @@ const styles = {
   virtualRow: {
     display: "flex",
     alignItems: "center",
-    padding: "0 14px",
+    padding: "0 18px",
     borderBottom: "1px solid #f1f5f9",
     background: "#ffffff",
     boxSizing: "border-box",
@@ -1653,7 +1643,7 @@ const styles = {
   virtualCell: {
     fontSize: 13,
     color: "#0f172a",
-    paddingRight: 12,
+    paddingRight: 14,
     boxSizing: "border-box",
     overflow: "hidden",
     whiteSpace: "nowrap",
@@ -1664,7 +1654,7 @@ const styles = {
     fontSize: 12,
     color: "#334155",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    paddingRight: 12,
+    paddingRight: 14,
     boxSizing: "border-box",
     overflow: "hidden",
     whiteSpace: "nowrap",
@@ -1674,13 +1664,13 @@ const styles = {
   virtualCellTitle: {
     display: "flex",
     alignItems: "center",
-    padding: "0 18px",
+    padding: "0 20px",
     minWidth: 0,
     overflow: "hidden",
     whiteSpace: "nowrap",
     textOverflow: "ellipsis",
     fontSize: 15,
-    fontWeight: 600,
+    fontWeight: 700,
     color: "#0f172a",
   },
 
@@ -1688,7 +1678,7 @@ const styles = {
     fontSize: 12,
     color: "#334155",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    paddingRight: 12,
+    paddingRight: 14,
     boxSizing: "border-box",
     overflow: "hidden",
     whiteSpace: "nowrap",
@@ -1746,6 +1736,8 @@ const styles = {
     display: "grid",
     gap: 16,
     minWidth: 0,
+    paddingLeft: 0,
+    alignContent: "start",
   },
 
   resultsHeader: {
@@ -1754,6 +1746,7 @@ const styles = {
     justifyContent: "space-between",
     gap: 14,
     flexWrap: "wrap",
+    width: "100%",
   },
 
   resultsTopActions: {
@@ -1803,6 +1796,7 @@ const styles = {
     fontSize: 13,
     fontWeight: 700,
     cursor: "pointer",
+    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
   },
   infoBox: {
     padding: 16,
@@ -1818,22 +1812,22 @@ const styles = {
     color: "#991b1b",
   },
   runningCard: {
-    padding: 20,
+    padding: 14,
     borderRadius: 20,
     border: "1px solid #dbeafe",
     background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
     boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
     display: "grid",
-    gap: 12,
+    gap: 8,
   },
   runningTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 900,
     color: "#0f172a",
   },
   runningText: {
     color: "#475569",
-    fontSize: 14,
+    fontSize: 13,
   },
   runningDots: {
     display: "flex",
@@ -1853,21 +1847,22 @@ const styles = {
     color: "#334155",
   },
   successCard: {
-    padding: 20,
+    padding: 14,
     borderRadius: 20,
     border: "1px solid #bbf7d0",
     background: "linear-gradient(180deg, #ffffff 0%, #f7fff9 100%)",
     boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
     display: "grid",
-    gap: 12,
+    gap: 8,
+    alignContent: "start",
   },
   successTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 900,
     color: "#166534",
   },
   successText: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#475569",
   },
   successActions: {
@@ -1878,11 +1873,15 @@ const styles = {
   },
   testCasesWrap: {
     display: "grid",
-    gap: 16,
+    gap: 18,
+    width: "calc(100vw - 56px)",
+    maxWidth: "none",
   },
   resultsInner: {
     display: "grid",
-    gap: 16,
+    gap: 18,
+    width: "100%",
+    maxWidth: "none",
   },
   emptyState: {
     padding: 28,
@@ -1907,10 +1906,10 @@ const styles = {
     justifyContent: "space-between",
     gap: 12,
     flexWrap: "wrap",
-    padding: "12px 14px",
-    borderRadius: 16,
+    padding: "14px 16px",
+    borderRadius: 18,
     border: "1px solid #e2e8f0",
-    background: "#fff",
+    boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
   },
   paginationMeta: {
     fontSize: 13,
@@ -1934,20 +1933,23 @@ const styles = {
   },
   tableOnlyWrap: {
     minWidth: 0,
+    width: "100%",
     transition: "filter 0.2s ease",
   },
   tableOnlyWrapBlurred: {
     filter: "blur(2px)",
   },
   tablePane: {
-    borderRadius: 20,
+    width: "100%",
+    maxWidth: "none",
+    borderRadius: 24,
     border: "1px solid #e8eef6",
     background: "#fff",
     overflow: "hidden",
-    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+    boxShadow: "0 14px 30px rgba(15, 23, 42, 0.06)",
   },
   tablePaneHead: {
-    padding: "16px 18px",
+    padding: "18px 22px",
     borderBottom: "1px solid #eef2f7",
     display: "flex",
     alignItems: "center",
@@ -1956,9 +1958,10 @@ const styles = {
     flexWrap: "wrap",
   },
   tablePaneTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 900,
     color: "#0f172a",
+    letterSpacing: "-0.02em",
   },
   tablePaneMeta: {
     fontSize: 13,
