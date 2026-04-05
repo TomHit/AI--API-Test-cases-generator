@@ -17,12 +17,11 @@ export async function analyzeProject(input) {
   const projectCard = buildProjectCard({
     signals,
     projectType,
+    openapi,
+    projectNotes,
   });
 
-  const summary = buildProjectSummary({
-    signals,
-    projectCard,
-  });
+  const summary = buildProjectSummary(projectCard);
 
   return {
     status: "completed",

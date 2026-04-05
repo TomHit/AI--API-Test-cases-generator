@@ -3,11 +3,14 @@
 const DOMAIN_RULES = {
   retail_commerce: {
     label: "Retail / Commerce",
-    keywords: [
+    baseWeight: 1.35,
+    pathWeight: 2.8,
+    strongKeywords: [
       "store",
       "order",
       "inventory",
       "product",
+      "products",
       "cart",
       "checkout",
       "catalog",
@@ -17,12 +20,22 @@ const DOMAIN_RULES = {
       "buyer",
       "seller",
       "item",
+      "items",
       "sku",
       "stock",
       "shop",
+      "merchant",
+    ],
+    weakKeywords: [
+      "customer",
+      "customers",
+      "payment",
+      "payments",
+      "invoice",
+      "billing",
     ],
     subdomains: {
-      pet_store: ["pet", "pets", "animal"],
+      pet_store: ["pet", "pets", "animal", "animals"],
       marketplace: ["marketplace", "vendor", "merchant", "seller"],
       food_delivery: ["restaurant", "menu", "delivery", "food", "meal"],
     },
@@ -30,16 +43,17 @@ const DOMAIN_RULES = {
 
   banking_finance: {
     label: "Banking / Finance",
-    keywords: [
+    baseWeight: 1.3,
+    pathWeight: 2.7,
+    strongKeywords: [
       "account",
       "transaction",
+      "transactions",
       "payment",
       "payments",
       "balance",
       "ledger",
       "loan",
-      "card",
-      "cards",
       "wallet",
       "bank",
       "transfer",
@@ -47,10 +61,9 @@ const DOMAIN_RULES = {
       "withdrawal",
       "credit",
       "debit",
-      "invoice",
-      "billing",
       "settlement",
     ],
+    weakKeywords: ["invoice", "billing", "card", "cards", "quote"],
     subdomains: {
       banking: ["bank", "account", "balance", "transfer", "deposit"],
       payments: ["payment", "checkout", "invoice", "settlement", "gateway"],
@@ -60,7 +73,9 @@ const DOMAIN_RULES = {
 
   healthcare: {
     label: "Healthcare",
-    keywords: [
+    baseWeight: 1.35,
+    pathWeight: 2.8,
+    strongKeywords: [
       "patient",
       "doctor",
       "appointment",
@@ -72,12 +87,10 @@ const DOMAIN_RULES = {
       "medication",
       "ehr",
       "emr",
-      "lab",
-      "test result",
-      "care plan",
       "symptom",
       "treatment",
     ],
+    weakKeywords: ["lab", "care", "test", "tests", "result", "results"],
     subdomains: {
       clinical: ["patient", "doctor", "diagnosis", "treatment"],
       hospital_ops: ["hospital", "ward", "bed", "admission", "discharge"],
@@ -87,7 +100,9 @@ const DOMAIN_RULES = {
 
   insurance: {
     label: "Insurance",
-    keywords: [
+    baseWeight: 1.3,
+    pathWeight: 2.7,
+    strongKeywords: [
       "policy",
       "claim",
       "claims",
@@ -98,8 +113,8 @@ const DOMAIN_RULES = {
       "underwriting",
       "beneficiary",
       "renewal",
-      "quote",
     ],
+    weakKeywords: ["quote", "quotes", "risk"],
     subdomains: {
       claims: ["claim", "claims", "settlement"],
       policy_admin: ["policy", "premium", "renewal", "coverage"],
@@ -108,7 +123,9 @@ const DOMAIN_RULES = {
 
   travel_hospitality: {
     label: "Travel / Hospitality",
-    keywords: [
+    baseWeight: 1.25,
+    pathWeight: 2.6,
+    strongKeywords: [
       "trip",
       "travel",
       "flight",
@@ -119,9 +136,8 @@ const DOMAIN_RULES = {
       "itinerary",
       "passenger",
       "destination",
-      "checkin",
-      "checkout",
     ],
+    weakKeywords: ["checkin", "checkout", "room", "ride", "driver"],
     subdomains: {
       airline: ["flight", "passenger", "boarding", "pnr"],
       hotel: ["hotel", "room", "reservation", "checkin", "checkout"],
@@ -131,12 +147,13 @@ const DOMAIN_RULES = {
 
   logistics_supply_chain: {
     label: "Logistics / Supply Chain",
-    keywords: [
+    baseWeight: 1.25,
+    pathWeight: 2.7,
+    strongKeywords: [
       "shipment",
       "shipping",
       "tracking",
       "warehouse",
-      "inventory",
       "fulfillment",
       "carrier",
       "dispatch",
@@ -145,6 +162,7 @@ const DOMAIN_RULES = {
       "route",
       "fleet",
     ],
+    weakKeywords: ["inventory", "stock", "vehicle", "driver"],
     subdomains: {
       shipping: ["shipment", "tracking", "carrier", "consignment"],
       warehouse: ["warehouse", "bin", "stock", "fulfillment"],
@@ -154,7 +172,9 @@ const DOMAIN_RULES = {
 
   hr_payroll: {
     label: "HR / Payroll",
-    keywords: [
+    baseWeight: 1.25,
+    pathWeight: 2.6,
+    strongKeywords: [
       "employee",
       "employees",
       "payroll",
@@ -168,6 +188,7 @@ const DOMAIN_RULES = {
       "timesheet",
       "department",
     ],
+    weakKeywords: ["manager", "staff", "team"],
     subdomains: {
       payroll: ["payroll", "salary", "benefits", "deduction"],
       hrms: ["employee", "attendance", "leave", "department"],
@@ -177,7 +198,9 @@ const DOMAIN_RULES = {
 
   education: {
     label: "Education",
-    keywords: [
+    baseWeight: 1.25,
+    pathWeight: 2.6,
+    strongKeywords: [
       "student",
       "course",
       "lesson",
@@ -191,6 +214,7 @@ const DOMAIN_RULES = {
       "school",
       "university",
     ],
+    weakKeywords: ["class", "classes", "subject"],
     subdomains: {
       lms: ["course", "lesson", "assignment", "quiz", "grade"],
       institution: ["student", "teacher", "school", "university"],
@@ -199,20 +223,21 @@ const DOMAIN_RULES = {
 
   legal_compliance: {
     label: "Legal / Compliance",
-    keywords: [
+    baseWeight: 1.25,
+    pathWeight: 2.6,
+    strongKeywords: [
       "contract",
       "agreement",
       "clause",
       "compliance",
       "regulation",
       "audit",
-      "policy",
-      "consent",
       "legal",
       "gdpr",
       "kyc",
       "aml",
     ],
+    weakKeywords: ["policy", "consent", "review"],
     subdomains: {
       legal_docs: ["contract", "agreement", "clause", "legal"],
       compliance_ops: ["compliance", "audit", "regulation", "policy"],
@@ -221,7 +246,9 @@ const DOMAIN_RULES = {
 
   media_content: {
     label: "Media / Content",
-    keywords: [
+    baseWeight: 1.2,
+    pathWeight: 2.5,
+    strongKeywords: [
       "content",
       "article",
       "video",
@@ -235,6 +262,7 @@ const DOMAIN_RULES = {
       "publish",
       "channel",
     ],
+    weakKeywords: ["editor", "media", "episode"],
     subdomains: {
       video: ["video", "stream", "playlist", "channel"],
       publishing: ["article", "publish", "editorial", "content"],
@@ -244,7 +272,9 @@ const DOMAIN_RULES = {
 
   social_communication: {
     label: "Social / Communication",
-    keywords: [
+    baseWeight: 1.15,
+    pathWeight: 2.4,
+    strongKeywords: [
       "message",
       "messages",
       "chat",
@@ -258,6 +288,7 @@ const DOMAIN_RULES = {
       "follow",
       "group",
     ],
+    weakKeywords: ["social", "profile"],
     subdomains: {
       messaging: ["chat", "message", "conversation", "thread"],
       social: ["post", "feed", "comment", "follow", "friend"],
@@ -266,7 +297,9 @@ const DOMAIN_RULES = {
 
   developer_tools: {
     label: "Developer Tools",
-    keywords: [
+    baseWeight: 1.15,
+    pathWeight: 2.4,
+    strongKeywords: [
       "repository",
       "repo",
       "build",
@@ -282,6 +315,7 @@ const DOMAIN_RULES = {
       "sdk",
       "api key",
     ],
+    weakKeywords: ["release", "tooling", "developer"],
     subdomains: {
       cicd: ["build", "deploy", "pipeline", "artifact", "release"],
       code_hosting: ["repository", "repo", "commit", "branch", "pull request"],
@@ -290,13 +324,14 @@ const DOMAIN_RULES = {
 
   security_identity: {
     label: "Security / Identity",
-    keywords: [
+    baseWeight: 0.78,
+    pathWeight: 1.4,
+    strongKeywords: [
       "auth",
       "authentication",
       "authorize",
       "authorization",
       "identity",
-      "user",
       "role",
       "permission",
       "token",
@@ -304,10 +339,9 @@ const DOMAIN_RULES = {
       "sso",
       "mfa",
       "otp",
-      "login",
-      "logout",
       "access",
     ],
+    weakKeywords: ["user", "login", "logout"],
     subdomains: {
       iam: ["role", "permission", "identity", "access"],
       authentication: ["login", "logout", "token", "mfa", "otp", "sso"],
@@ -316,7 +350,9 @@ const DOMAIN_RULES = {
 
   crm_sales: {
     label: "CRM / Sales",
-    keywords: [
+    baseWeight: 1.2,
+    pathWeight: 2.4,
+    strongKeywords: [
       "customer",
       "lead",
       "opportunity",
@@ -325,9 +361,9 @@ const DOMAIN_RULES = {
       "sales",
       "pipeline",
       "quote",
-      "account manager",
       "prospect",
     ],
+    weakKeywords: ["account manager", "accounts"],
     subdomains: {
       crm: ["customer", "contact", "lead", "prospect"],
       sales_ops: ["deal", "opportunity", "quote", "pipeline", "sales"],
@@ -336,17 +372,16 @@ const DOMAIN_RULES = {
 
   generic_service: {
     label: "Generic Service",
-    keywords: [],
+    baseWeight: 0,
+    pathWeight: 0,
+    strongKeywords: [],
+    weakKeywords: [],
     subdomains: {},
   },
 };
 
-function tokenizeText(text) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9_/\-\s]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
+function normalizeText(text) {
+  return String(text || "").toLowerCase();
 }
 
 function normalizePathParts(path) {
@@ -422,12 +457,14 @@ function collectCorpus({ openapi, signals, projectNotes }) {
   return chunks.filter(Boolean);
 }
 
-function scoreKeywordList(corpusText, keywords, weight = 1) {
+function countCorpusMatches(corpusText, keywords = [], weight = 1) {
   let score = 0;
   const matched = [];
 
   for (const keyword of keywords) {
-    const lowered = keyword.toLowerCase();
+    const lowered = normalizeText(keyword);
+    if (!lowered) continue;
+
     if (corpusText.includes(lowered)) {
       score += weight;
       matched.push(lowered);
@@ -437,14 +474,16 @@ function scoreKeywordList(corpusText, keywords, weight = 1) {
   return { score, matched };
 }
 
-function scorePathTokens(endpoints = [], keywords = [], weight = 2) {
+function countPathMatches(endpoints = [], keywords = [], weight = 2) {
   let score = 0;
   const matched = [];
 
   for (const ep of endpoints) {
     const pathParts = normalizePathParts(ep?.path || "");
     for (const keyword of keywords) {
-      const lowered = keyword.toLowerCase();
+      const lowered = normalizeText(keyword);
+      if (!lowered) continue;
+
       if (pathParts.includes(lowered)) {
         score += weight;
         matched.push(lowered);
@@ -453,6 +492,47 @@ function scorePathTokens(endpoints = [], keywords = [], weight = 2) {
   }
 
   return { score, matched };
+}
+
+function scoreDomainRule({ rule, corpusText, endpoints }) {
+  const strongText = countCorpusMatches(
+    corpusText,
+    rule.strongKeywords || [],
+    rule.baseWeight,
+  );
+  const weakText = countCorpusMatches(
+    corpusText,
+    rule.weakKeywords || [],
+    rule.baseWeight * 0.45,
+  );
+
+  const strongPath = countPathMatches(
+    endpoints,
+    rule.strongKeywords || [],
+    rule.pathWeight,
+  );
+  const weakPath = countPathMatches(
+    endpoints,
+    rule.weakKeywords || [],
+    rule.pathWeight * 0.45,
+  );
+
+  const totalScore =
+    strongText.score + weakText.score + strongPath.score + weakPath.score;
+
+  const matchedSignals = [
+    ...new Set([
+      ...strongText.matched,
+      ...weakText.matched,
+      ...strongPath.matched,
+      ...weakPath.matched,
+    ]),
+  ];
+
+  return {
+    score: totalScore,
+    signals: matchedSignals,
+  };
 }
 
 function pickTopDomain(domainScores) {
@@ -465,19 +545,21 @@ function pickTopDomain(domainScores) {
   }
 
   const top = ranked[0];
-  const second = ranked[1];
+  const second = ranked[1] || null;
 
-  let confidence = Math.min(0.95, 0.35 + top.score * 0.06);
+  let confidence = Math.min(0.95, 0.3 + top.score * 0.045);
 
   if (second && top.score - second.score <= 2) {
     confidence -= 0.12;
+  } else if (second && top.score - second.score <= 5) {
+    confidence -= 0.06;
   }
 
   confidence = Math.max(0.2, Math.min(0.95, confidence));
 
   return {
     top,
-    second: second || null,
+    second,
     confidence,
   };
 }
@@ -489,7 +571,7 @@ function detectSubdomain(domainRule, corpusText) {
   let bestSignals = [];
 
   for (const [subKey, keywords] of Object.entries(subdomains)) {
-    const { score, matched } = scoreKeywordList(corpusText, keywords, 1);
+    const { score, matched } = countCorpusMatches(corpusText, keywords, 1);
     if (score > bestScore) {
       bestKey = subKey;
       bestScore = score;
@@ -512,28 +594,23 @@ export function classifyBusinessDomain(input = {}) {
 
   const corpusChunks = collectCorpus({ openapi, signals, projectNotes });
   const corpusText = corpusChunks.join(" ").toLowerCase();
+  const endpoints = Array.isArray(signals?.endpoints) ? signals.endpoints : [];
 
   const domainScores = {};
 
   for (const [domainKey, rule] of Object.entries(DOMAIN_RULES)) {
     if (domainKey === "generic_service") continue;
 
-    const keywordScore = scoreKeywordList(corpusText, rule.keywords, 1);
-    const pathScore = scorePathTokens(
-      signals?.endpoints || [],
-      rule.keywords,
-      2,
-    );
-
-    const totalScore = keywordScore.score + pathScore.score;
-    const matchedSignals = [
-      ...new Set([...keywordScore.matched, ...pathScore.matched]),
-    ];
+    const scored = scoreDomainRule({
+      rule,
+      corpusText,
+      endpoints,
+    });
 
     domainScores[domainKey] = {
-      score: totalScore,
+      score: scored.score,
       label: rule.label,
-      signals: matchedSignals,
+      signals: scored.signals,
     };
   }
 
@@ -557,21 +634,21 @@ export function classifyBusinessDomain(input = {}) {
     .filter(
       ([key, value]) =>
         key !== picked.top.key &&
-        value.score >= Math.max(3, picked.top.score - 2),
+        value.score >= Math.max(4, picked.top.score * 0.45),
     )
     .sort((a, b) => b[1].score - a[1].score)
     .slice(0, 2)
     .map(([key, value]) => ({
       domain: key,
       label: value.label,
-      score: value.score,
+      score: Number(value.score.toFixed(2)),
     }));
 
   return {
     business_domain: picked.top.key,
     business_domain_label: picked.top.label,
     subdomain: subdomainResult?.subdomain || null,
-    domain_confidence: picked.confidence,
+    domain_confidence: Number(picked.confidence.toFixed(2)),
     domain_signals: picked.top.signals,
     secondary_domains: secondaryDomains,
   };

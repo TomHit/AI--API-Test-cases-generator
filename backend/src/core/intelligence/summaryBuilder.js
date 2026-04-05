@@ -1,13 +1,40 @@
-export function buildProjectSummary({ signals, projectCard }) {
-  const patterns =
-    projectCard.ai_patterns?.length > 0
-      ? projectCard.ai_patterns.join(", ")
-      : "no clear AI patterns";
+export function buildProjectSummary(card = {}) {
+  const domain = card.business_domain_label || "unknown domain";
+  const subdomain = card.subdomain;
+  const workflow = card.workflow || [];
+  const risks = card.risk_tags || [];
+  const missing = card.missing || [];
 
-  const risks =
-    projectCard.risk_tags?.length > 0
-      ? projectCard.risk_tags.join(", ")
-      : "no major risks detected yet";
+  let systemDescription = "";
 
-  return `This project appears to be a ${projectCard.project_type}. It exposes ${signals.endpointCount || 0} endpoints and shows patterns such as ${patterns}. Key risks currently inferred are ${risks}.`;
+  if (domain === "Retail / Commerce") {
+    if (subdomain === "pet_store") {
+      systemDescription =
+        "This API represents a pet store system managing animals, inventory, and customer orders.";
+    } else {
+      systemDescription =
+        "This API represents a commerce platform handling products, inventory, and orders.";
+    }
+  } else {
+    systemDescription = `This API represents a system in the ${domain}.`;
+  }
+
+  let workflowText = "";
+  if (workflow.includes("crud")) {
+    workflowText = "It supports CRUD operations for managing core resources.";
+  }
+
+  let riskText = "";
+  if (risks.length) {
+    riskText = `Key risks include ${risks.join(", ")}.`;
+  }
+
+  let missingText = "";
+  if (missing.length) {
+    missingText = `Missing controls include ${missing.join(", ")}.`;
+  }
+
+  return [systemDescription, workflowText, riskText, missingText]
+    .filter(Boolean)
+    .join(" ");
 }
