@@ -299,17 +299,24 @@ export function detectProjectType(signals = {}) {
 
   const adjustedRagScore = openapiOnly ? 0 : ragScore;
 
-  if (
+  const isClearlyTransactional =
+    hasStrongPaymentsHints ||
+    paymentWorkflowScore >= 2 ||
+    domainKey === "banking_finance";
+
+  const hasStrictRagEvidence =
     hasStrongRagHints &&
     hasDocsOrNotesOrGithub &&
     adjustedRagScore >= 3 &&
-    retrieveScore >= 1 &&
-    (ingestScore >= 1 ||
-      signals.hasUpload ||
-      signals.hasFileInput ||
-      llmScore >= 1 ||
-      llmWorkflowScore >= 1)
-  ) {
+    retrieveScore >= 2 &&
+    ingestScore >= 1 &&
+    llmScore >= 1 &&
+    !isClearlyTransactional;
+
+  if (isClearlyTransactional) {
+    systemFamily = "transactional_api";
+    reasons.push("Payment/financial workflow overrides AI/RAG signals.");
+  } else if (hasStrictRagEvidence) {
     systemFamily = "rag_system";
     reasons.push(
       "Strong non-OpenAPI RAG evidence found across notes/docs/github.",
@@ -323,19 +330,13 @@ export function detectProjectType(signals = {}) {
     reasons.push("Prediction and inference signals dominate.");
   } else if (
     (llmScore >= 2 || llmWorkflowScore >= 1.5 || signals.hasChat) &&
-    adjustedRagScore < 3
+    adjustedRagScore < 3 &&
+    !isClearlyTransactional
   ) {
     systemFamily = "ai_application";
     reasons.push(
       "LLM or conversational signals dominate without strong retrieval evidence.",
     );
-  } else if (
-    hasStrongPaymentsHints ||
-    paymentWorkflowScore >= 2 ||
-    domainKey === "banking_finance"
-  ) {
-    systemFamily = "transactional_api";
-    reasons.push("Transactional finance/payment resource evidence dominates.");
   } else if (endpointCount > 0) {
     systemFamily = "crud_business_api";
     reasons.push(

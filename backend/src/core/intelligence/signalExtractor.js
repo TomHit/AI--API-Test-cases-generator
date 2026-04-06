@@ -167,7 +167,6 @@ const AI_KEYWORDS = {
   rag_core: [
     "rag",
     "retrieval augmented generation",
-    "retrieve",
     "retrieval",
     "rerank",
     "grounding",
@@ -887,6 +886,17 @@ export function extractSignals(input = {}) {
     repo_terms: getTopTerms(signals.evidence.repo_terms, 12),
     api_patterns: getTopTerms(signals.evidence.api_patterns, 12),
   };
+  if (
+    (signals.scores.domain.banking_finance || 0) >= 5 &&
+    (signals.scores.ai.rag || 0) <= 1 &&
+    (signals.scores.ai.llm || 0) <= 1
+  ) {
+    signals.scores.ai = {};
+    signals.evidence.ai_terms = {};
+    if (signals.topEvidence) {
+      signals.topEvidence.ai_terms = [];
+    }
+  }
 
   signals.flags = {
     openapiOnly:
@@ -894,11 +904,15 @@ export function extractSignals(input = {}) {
       !signals.sources.docs.present &&
       !signals.sources.github.present &&
       !signals.sources.notes.present,
+
+    // 🔥 STRICT RAG detection (multi-signal required)
     hasStrongRagHints:
-      (signals.scores.ai.rag || 0) >= 3 &&
-      ((signals.sources.docs.present && signals.scores.ai.rag > 0) ||
-        (signals.sources.github.present && signals.scores.ai.rag > 0) ||
-        (signals.sources.notes.present && signals.scores.ai.rag > 0)),
+      (signals.scores.ai.rag || 0) >= 4 && // ⬅️ higher threshold
+      (signals.scores.workflow.retrieve || 0) >= 2 && // ⬅️ MUST have retrieval
+      (signals.scores.workflow.ingest || 0) >= 1 && // ⬅️ MUST have ingestion
+      (signals.scores.ai.llm || 0) >= 1 && // ⬅️ MUST have LLM
+      !((signals.scores.domain.banking_finance || 0) >= 4), // ⬅️ BLOCK finance systems
+
     hasStrongPaymentsHints: (signals.scores.domain.banking_finance || 0) >= 5,
   };
 

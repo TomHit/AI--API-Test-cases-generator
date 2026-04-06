@@ -70,6 +70,176 @@ function sortScoreMap(scoreMap = {}, keyName = "name") {
     }));
 }
 
+function sentenceJoin(items = [], conjunction = "and") {
+  const filtered = (items || []).filter(Boolean);
+  if (filtered.length === 0) return "";
+  if (filtered.length === 1) return filtered[0];
+  if (filtered.length === 2) {
+    return `${filtered[0]} ${conjunction} ${filtered[1]}`;
+  }
+  return `${filtered.slice(0, -1).join(", ")}, ${conjunction} ${filtered[filtered.length - 1]}`;
+}
+
+function normalizeFlowTerm(value = "") {
+  const clean = cleanPhrase(value);
+  const lower = toLower(clean);
+
+  const known = [
+    ["initiation", "initiation"],
+    ["validation", "validation"],
+    ["authorization", "authorization"],
+    ["response", "response"],
+    ["settlement", "settlement"],
+    ["refund", "refund"],
+    ["chargeback", "chargeback"],
+    ["notification", "notifications"],
+    ["report", "reporting"],
+    ["reporting", "reporting"],
+    ["dispute", "dispute_management"],
+    ["retry", "retry_handling"],
+    ["fraud", "fraud_detection"],
+    ["monitoring", "monitoring"],
+    ["dashboard", "dashboard_review"],
+  ];
+
+  for (const [pattern, label] of known) {
+    if (lower.includes(pattern)) return label;
+  }
+
+  const invalidTerms = [
+    "downtime",
+    "redundancy",
+    "audit",
+    "compliance",
+    "security",
+    "risk",
+    "mitigation",
+  ];
+
+  if (invalidTerms.some((t) => lower.includes(t))) {
+    return "";
+  }
+}
+
+function isStructuredFlowSentence(sentence = "") {
+  const lower = toLower(sentence);
+  return (
+    cleanPhrase(sentence).includes("→") || lower.includes("transaction flow:")
+  );
+}
+
+function extractStructuredArrowFlows(sentences = []) {
+  const flows = [];
+  const evidence = {};
+
+  for (const sentence of sentences) {
+    if (!isStructuredFlowSentence(sentence)) continue;
+
+    const clean = normalizeWhitespace(sentence);
+    const afterColon = clean.includes(":")
+      ? clean.split(":").slice(1).join(":")
+      : clean;
+
+    const parts = afterColon
+      .split("→")
+      .map((x) => cleanPhrase(x))
+      .filter(Boolean);
+
+    for (const part of parts) {
+      const normalized = normalizeFlowTerm(part);
+      if (!normalized) continue;
+
+      const key = `flow::${normalized}`;
+
+      flows.push({
+        name: normalized,
+        action: normalized,
+        object: "",
+        actor: "",
+        step_type: "business_flow",
+        score: 5,
+      });
+
+      if (!evidence[key]) evidence[key] = [];
+      pushUnique(evidence[key], clean);
+    }
+  }
+
+  return { flows, evidence };
+}
+
+function extractColonDefinedFlows(lines = []) {
+  const flows = [];
+  const evidence = {};
+
+  const headingLikePrefixes = [
+    "transaction flow",
+    "refunds & chargebacks",
+    "refunds",
+    "chargebacks",
+    "notifications",
+    "reporting",
+    "security",
+    "compliance",
+    "monitoring",
+    "dependencies",
+    "success metrics",
+  ];
+
+  for (const rawLine of lines) {
+    const line = cleanPhrase(rawLine);
+    const lower = toLower(line);
+
+    if (!line.includes(":")) continue;
+    if (!headingLikePrefixes.some((prefix) => lower.startsWith(prefix)))
+      continue;
+
+    const [left, right] = line.split(/:(.+)/).filter(Boolean);
+    const category = normalizeFlowTerm(left);
+
+    if (category) {
+      const key = `flow::${category}`;
+      flows.push({
+        name: category,
+        action: category,
+        object: "",
+        actor: "",
+        step_type: "business_flow_group",
+        score: 2,
+      });
+
+      if (!evidence[key]) evidence[key] = [];
+      pushUnique(evidence[key], line);
+    }
+
+    const rightParts = String(right || "")
+      .split(/[;,]/)
+      .map((x) => cleanPhrase(x))
+      .filter(Boolean)
+      .slice(0, 5);
+
+    for (const part of rightParts) {
+      const normalized = normalizeFlowTerm(part);
+      if (!normalized) continue;
+
+      const key = `flow::${normalized}`;
+      flows.push({
+        name: normalized,
+        action: normalized,
+        object: "",
+        actor: "",
+        step_type: "business_flow_detail",
+        score: 1.5,
+      });
+
+      if (!evidence[key]) evidence[key] = [];
+      pushUnique(evidence[key], line);
+    }
+  }
+
+  return { flows, evidence };
+}
+
 const USER_STORY_PATTERNS = [
   /^as a\s+/i,
   /^as an\s+/i,
@@ -170,13 +340,14 @@ const RISK_PATTERNS = [
   {
     risk: "file_upload_security",
     patterns: [
-      "upload",
-      "file",
-      "attachment",
-      "document",
-      "image",
+      "file upload",
+      "upload file",
+      "attachment upload",
+      "multipart",
       "file type",
       "file size",
+      "uploaded document",
+      "uploaded image",
     ],
   },
   {
@@ -429,12 +600,26 @@ function extractObjectFromSentence(sentence = "", action = "") {
   }
 
   let objectText = after.slice(0, cutIndex).trim();
+
   objectText = objectText
     .replace(/[.,;:]$/, "")
     .replace(/\s+/g, " ")
     .trim();
 
-  const words = objectText.split(" ").filter(Boolean).slice(0, 6);
+  // 🔥 REMOVE garbage endings
+  objectText = objectText
+    .replace(/\b(llm|api|json|http|copy)\b.*$/i, "")
+    .trim();
+
+  // 🔥 REMOVE single-letter trailing junk
+  objectText = objectText.replace(/\b[a-zA-Z]$/, "").trim();
+
+  // 🔥 REMOVE very short useless objects
+  if (objectText.length < 3) return "";
+
+  // 🔥 LIMIT words safely
+  const words = objectText.split(" ").filter(Boolean).slice(0, 5);
+
   return words.join(" ");
 }
 
@@ -491,9 +676,33 @@ function detectActorInSentence(sentence = "") {
   return "";
 }
 
-function extractFlowSteps(sentences = []) {
+function extractFlowSteps(sentences = [], lines = []) {
   const stepMap = new Map();
   const evidence = {};
+
+  const structured = extractStructuredArrowFlows(sentences);
+  const colonFlows = extractColonDefinedFlows(lines);
+
+  for (const item of [...structured.flows, ...colonFlows.flows]) {
+    const key = `${item.action}::${item.object || "flow"}`;
+
+    if (!stepMap.has(key)) {
+      stepMap.set(key, { ...item });
+    } else {
+      const current = stepMap.get(key);
+      current.score += item.score;
+    }
+  }
+
+  for (const [evKey, evList] of Object.entries(structured.evidence || {})) {
+    if (!evidence[evKey]) evidence[evKey] = [];
+    for (const line of evList) pushUnique(evidence[evKey], line);
+  }
+
+  for (const [evKey, evList] of Object.entries(colonFlows.evidence || {})) {
+    if (!evidence[evKey]) evidence[evKey] = [];
+    for (const line of evList) pushUnique(evidence[evKey], line);
+  }
 
   for (const sentence of sentences) {
     const action = findBestAction(sentence);
@@ -528,9 +737,82 @@ function extractFlowSteps(sentences = []) {
     }
   }
 
+  const weakObjects = new Set([
+    "mechanism",
+    "system",
+    "platform",
+    "document",
+    "documents",
+    "api",
+    "apis",
+    "json",
+    "http",
+    "file",
+    "files",
+  ]);
+  const invalidFlowWords = new Set([
+    "downtime",
+    "redundancy",
+    "regulatory_changes",
+    "compliance",
+    "security",
+    "monitoring",
+  ]);
+
   const flows = [...stepMap.values()]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 25)
+    .filter((item) => {
+      if (!item || !item.action) return false;
+
+      const action = toLower(item.action || "");
+
+      // 🚫 HARD FILTER: remove non-flow / infra / risk noise
+      const invalidPatterns = [
+        "downtime",
+        "redundancy",
+        "audit",
+        "compliance",
+        "security",
+        "risk",
+        "mitigation",
+        "detection",
+        "monitoring",
+        "alert",
+      ];
+
+      if (invalidPatterns.some((p) => action.includes(p))) {
+        return false;
+      }
+
+      // 🚫 remove weak/technical junk
+      if (weakObjects.has(toLower(item.object)) || action.length < 2) {
+        return false;
+      }
+
+      // ✅ KEEP only meaningful business flow types
+      if (
+        item.step_type === "business_flow" ||
+        item.step_type === "business_flow_group"
+      ) {
+        return true;
+      }
+
+      // ❌ drop low-quality extracted actions
+      return false;
+    })
+    .sort((a, b) => {
+      const isBusinessA = a.step_type === "business_flow";
+      const isBusinessB = b.step_type === "business_flow";
+
+      // ✅ preserve original structured order
+      if (isBusinessA && isBusinessB) return 0;
+
+      // ✅ prioritize main flow over groups
+      if (isBusinessA) return -1;
+      if (isBusinessB) return 1;
+
+      return b.score - a.score;
+    })
+    .slice(0, 15) // 🔥 reduce noise (25 → 15)
     .map((item) => ({
       ...item,
       score: Number((item.score || 0).toFixed(2)),
@@ -541,7 +823,6 @@ function extractFlowSteps(sentences = []) {
     evidence,
   };
 }
-
 function extractValidations(sentences = []) {
   const validations = [];
 
@@ -635,11 +916,21 @@ function buildDocSummary({
   const parts = [];
 
   if (flows.length > 0) {
-    const topFlows = flows.slice(0, 4).map((x) => {
-      const objectText = x.object ? ` ${x.object}` : "";
-      return `${x.action.replaceAll("_", " ")}${objectText}`;
-    });
-    parts.push(`Documented business steps include ${topFlows.join(", ")}.`);
+    const topFlows = flows
+      .slice(0, 6)
+      .map((x) => {
+        if (x.object) {
+          return `${x.action.replaceAll("_", " ")} ${x.object}`.trim();
+        }
+        return x.action.replaceAll("_", " ");
+      })
+      .filter(Boolean);
+
+    if (topFlows.length > 0) {
+      parts.push(
+        `The documented workflow includes ${sentenceJoin(topFlows.slice(0, 5))}.`,
+      );
+    }
   }
 
   if (actors.length > 0) {
@@ -685,7 +976,7 @@ export function extractDocSignals(input = {}) {
   const userStories = extractUserStories(lines);
   const acceptanceCriteria = extractAcceptanceCriteria(lines);
   const actors = detectActors(sentences);
-  const flowResult = extractFlowSteps(sentences);
+  const flowResult = extractFlowSteps(sentences, lines);
   const riskResult = extractRisks(sentences);
 
   const validations = extractValidations(sentences);

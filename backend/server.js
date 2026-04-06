@@ -11,6 +11,7 @@ import {
   extractEndpointsLite,
   extractEndpointsFull,
 } from "./src/services/openapiParser.js";
+import documentAnalysisRoute from "./src/routes/documentAnalysis.js";
 import { pool, testDbConnection } from "./src/db/postgres.js";
 import { createJob, getJob, listJobs } from "./src/jobs/jobStore.js";
 import { subscribeJob } from "./src/jobs/jobEvents.js";
@@ -37,15 +38,44 @@ process.on("unhandledRejection", (err) =>
 const app = express();
 
 app.use(cors());
+
+app.use((req, res, next) => {
+  console.log(
+    "INCOMING:",
+    req.method,
+    req.url,
+    "| content-type:",
+    req.headers["content-type"],
+  );
+  next();
+});
+
 app.use(express.json({ limit: "2mb" }));
 
-app.use("/api/project-analysis", projectAnalysisRoute);
+app.use((err, req, res, next) => {
+  if (err) {
+    console.error("GLOBAL ERROR:", err);
+  }
+
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({
+      ok: false,
+      message: "Invalid JSON body",
+      detail: err.message,
+    });
+  }
+
+  next(err);
+});
+
 // increase timeouts a bit for local ollama
 app.use((req, res, next) => {
   req.setTimeout(120000);
   res.setTimeout(120000);
   next();
 });
+app.use("/api", documentAnalysisRoute);
+app.use("/api/project-analysis", projectAnalysisRoute);
 
 const PROJECTS_DIR = path.join(process.cwd(), "projects");
 

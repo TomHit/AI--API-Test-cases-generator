@@ -4,12 +4,15 @@ import { analyzeProject } from "../core/intelligence/analyzeProject.js";
 const router = express.Router();
 
 router.post("/", async (req, res) => {
+  console.log("HIT /api/project-analysis");
+  console.log("headers content-type:", req.headers["content-type"]);
+  console.log("body keys:", Object.keys(req.body || {}));
+  console.log("raw body:", req.body);
+
   try {
     const {
       api_spec_link,
       project_notes,
-
-      // new enrichment inputs
       documents_text,
       prd_text,
       jira_text,
@@ -17,20 +20,21 @@ router.post("/", async (req, res) => {
       acceptance_criteria_text,
       comments_text,
       extra_texts,
-    } = req.body;
+    } = req.body || {};
 
     let openapi = null;
 
     if (api_spec_link) {
+      console.log("fetching spec:", api_spec_link);
       const specRes = await fetch(api_spec_link);
+      console.log("spec status:", specRes.status, specRes.statusText);
       openapi = await specRes.json();
     }
 
+    console.log("calling analyzeProject...");
     const result = await analyzeProject({
       openapi,
       projectNotes: project_notes || "",
-
-      // pass doc/jira/prd content into analyzer
       documentsText: documents_text || "",
       prdText: prd_text || "",
       jiraText: jira_text || "",
@@ -39,11 +43,15 @@ router.post("/", async (req, res) => {
       commentsText: comments_text || "",
       extraTexts: Array.isArray(extra_texts) ? extra_texts : [],
     });
+    console.log("analyzeProject done");
 
-    res.json(result);
+    return res.status(200).json(result);
   } catch (err) {
-    res.status(500).json({
-      message: err.message || "Analysis failed",
+    console.error("POST /api/project-analysis failed:", err);
+    return res.status(500).json({
+      status: "failed",
+      message: err?.message || "Analysis failed",
+      stack: err?.stack || null,
     });
   }
 });

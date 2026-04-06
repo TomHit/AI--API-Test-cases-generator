@@ -1,0 +1,88 @@
+import express from "express";
+import multer from "multer";
+import fs from "fs/promises";
+import path from "path";
+
+import { ingestDocument } from "../core/intelligence/documentIngestion.js";
+import { analyzeProject } from "../core/intelligence/analyzeProject.js";
+
+const router = express.Router();
+
+const upload = multer({
+  dest: path.join(process.cwd(), "tmp", "uploads"),
+  limits: {
+    fileSize: 15 * 1024 * 1024,
+  },
+});
+
+router.post("/analyze-document", upload.single("file"), async (req, res) => {
+  let tempPath = "";
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        ok: false,
+        message: "file is required",
+      });
+    }
+
+    tempPath = req.file.path;
+
+    const ingested = await ingestDocument(tempPath, {
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+    });
+
+    if (!ingested?.text || !String(ingested.text).trim()) {
+      return res.status(400).json({
+        ok: false,
+        message: "No readable text could be extracted from file",
+        ingestion: {
+          kind: ingested?.kind || null,
+          hasTextLayer:
+            typeof ingested?.hasTextLayer === "boolean"
+              ? ingested.hasTextLayer
+              : null,
+          warnings: ingested?.warnings || [],
+        },
+      });
+    }
+
+    const result = await analyzeProject({
+      openapi: null,
+      projectNotes: String(req.body?.project_notes || ""),
+      documentsText: ingested.text,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      file: {
+        original_name: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+      },
+      ingestion: {
+        kind: ingested.kind || null,
+        hasTextLayer:
+          typeof ingested.hasTextLayer === "boolean"
+            ? ingested.hasTextLayer
+            : null,
+        warnings: ingested.warnings || [],
+        text_length: String(ingested.text || "").length,
+      },
+      result,
+    });
+  } catch (err) {
+    console.error("POST /api/analyze-document failed:", err);
+    return res.status(500).json({
+      ok: false,
+      message: err?.message || "Document analysis failed",
+    });
+  } finally {
+    if (tempPath) {
+      await fs.unlink(tempPath).catch(() => {});
+    }
+  }
+});
+
+export default router;

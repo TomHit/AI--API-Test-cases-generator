@@ -55,9 +55,13 @@ function mergeWorkflow(baseWorkflow = [], docFlows = []) {
           if (!f?.action) return null;
 
           const action = f.action.replaceAll("_", " ");
-          const object = f.object ? ` ${f.object}` : "";
 
-          return `${action}${object}`;
+          // 🔥 filter bad objects
+          if (!f.object || f.object.length < 3) return action;
+
+          if (/^(llm|api|json|http|copy)$/i.test(f.object)) return action;
+
+          return `${action} ${f.object}`;
         })
         .filter(Boolean)
     : [];
@@ -72,30 +76,24 @@ function mergeSummary(baseSummary = "", docSummary = "", docSignals = {}) {
   const cleanBase = String(baseSummary || "").trim();
   const cleanDoc = String(docSummary || "").trim();
 
-  const flows = (docSignals?.flows || [])
-    .slice(0, 4)
-    .map((f) => {
-      if (!f?.action) return null;
-
-      const action = f.action.replaceAll("_", " ");
-      const object = f.object ? ` ${f.object}` : "";
-
-      return `${action}${object}`;
-    })
-    .filter(Boolean)
-    .join(", ");
-
   const hasStrongDocContext =
     (docSignals?.flows || []).length > 0 ||
     (docSignals?.user_stories || []).length > 0;
 
-  if (!hasStrongDocContext) {
+  if (!hasStrongDocContext) return cleanBase;
+
+  // 🔥 Only take useful part of doc summary
+  let cleanedDoc = cleanDoc
+    .replace(/documented business steps include[^.]+./i, "")
+    .replace(/feature clues include[^.]+./i, "")
+    .trim();
+
+  // 🔥 Avoid duplication
+  if (!cleanedDoc || cleanedDoc.length < 20) {
     return cleanBase;
   }
 
-  return [cleanBase, cleanDoc, flows ? `Business flow includes ${flows}.` : ""]
-    .filter(Boolean)
-    .join(" ");
+  return `${cleanBase} ${cleanedDoc}`;
 }
 
 function mergeMissing(
@@ -142,7 +140,7 @@ function mergeMissing(
   return uniqueList(merged).slice(0, 20);
 }
 
-function buildContextHighlights(base = {}, docSignals = {}) {
+function buildContextHighlights(base = {}, docFlows = [], docSignals = {}) {
   const highlights = [];
 
   if (base?.projectCard?.project_type) {
@@ -153,13 +151,17 @@ function buildContextHighlights(base = {}, docSignals = {}) {
     highlights.push(`Domain: ${base.projectCard.business_domain_label}`);
   }
 
-  const flowNames = (docSignals?.flows || [])
+  const flowNames = (docFlows || [])
     .slice(0, 4)
     .map((f) => {
       if (!f?.action) return null;
-      return `${f.action.replaceAll("_", " ")}${f.object ? ` ${f.object}` : ""}`;
+      const action = f.action.replaceAll("_", " ");
+      if (!f.object || f.object.length < 3) return action;
+      if (/^(llm|api|json|http|copy)$/i.test(f.object)) return action;
+      return `${action} ${f.object}`;
     })
     .filter(Boolean);
+
   if (flowNames.length > 0) {
     highlights.push(`Business flows: ${flowNames.join(", ")}`);
   }
@@ -179,15 +181,30 @@ export function mergeProjectContext(baseAnalysis = {}, docSignals = {}) {
   const baseProjectCard = baseAnalysis?.projectCard || {};
   const baseClassification = baseAnalysis?.classification || {};
   const baseSummary = baseAnalysis?.summary || "";
+  const strongDocFlows = (docSignals?.flows || []).filter(
+    (f) =>
+      f?.action &&
+      f.score >= 2 && // 🔥 minimum confidence
+      (!f.object || f.object.length >= 3),
+  );
 
   const mergedWorkflow = mergeWorkflow(
     baseProjectCard.workflow || baseClassification.workflow || [],
-    docSignals?.flows || [],
+    strongDocFlows || [],
+  );
+
+  const docRisks = (docSignals?.risks || [])
+    .map((item) => item?.name)
+    .filter(Boolean);
+
+  // 🔥 filter noisy risks
+  const filteredDocRisks = docRisks.filter(
+    (r) => !["file_upload_security"].includes(r),
   );
 
   const mergedRiskTags = mergePrimitiveLists(
     baseProjectCard.risk_tags || [],
-    (docSignals?.risks || []).map((item) => item?.name).filter(Boolean),
+    filteredDocRisks,
     20,
   );
 
@@ -226,7 +243,11 @@ export function mergeProjectContext(baseAnalysis = {}, docSignals = {}) {
     doc_flows: docSignals?.flows || [],
     doc_stats: docSignals?.stats || {},
 
-    context_highlights: buildContextHighlights(baseAnalysis, docSignals),
+    context_highlights: buildContextHighlights(
+      baseAnalysis,
+      strongDocFlows,
+      docSignals,
+    ),
   };
 
   const mergedSummary = mergeSummary(

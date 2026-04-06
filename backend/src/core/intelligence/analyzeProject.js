@@ -10,8 +10,6 @@ export async function analyzeProject(input = {}) {
     openapi = null,
     projectNotes = "",
     githubData = null,
-
-    // doc/jira/prd enrichment
     documentsText = "",
     prdText = "",
     jiraText = "",
@@ -21,14 +19,23 @@ export async function analyzeProject(input = {}) {
     extraTexts = [],
   } = input;
 
-  // -------------------------
-  // Base analysis (source of truth)
-  // -------------------------
+  const combinedDocumentsText = [
+    documentsText,
+    prdText,
+    jiraText,
+    storyText,
+    acceptanceCriteriaText,
+    commentsText,
+    ...(Array.isArray(extraTexts) ? extraTexts : []),
+  ]
+    .filter((x) => String(x || "").trim())
+    .join("\n\n");
+
   const signals = extractSignals({
     openapi,
     projectNotes,
     githubData,
-    documentsText,
+    documentsText: combinedDocumentsText,
   });
 
   const classification = detectProjectType(signals);
@@ -49,9 +56,6 @@ export async function analyzeProject(input = {}) {
     projectCard: baseProjectCard,
   };
 
-  // -------------------------
-  // Doc/Jira/PRD enrichment
-  // -------------------------
   const docSignals = extractDocSignals({
     documentsText,
     prdText,
@@ -62,11 +66,9 @@ export async function analyzeProject(input = {}) {
     extraTexts,
   });
 
-  // If no doc content, return base directly
   if (!docSignals?.hasContent) {
     return baseAnalysis;
   }
 
-  // Merge enrichment without changing system truth
   return mergeProjectContext(baseAnalysis, docSignals);
 }

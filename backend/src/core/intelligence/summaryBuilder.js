@@ -1,23 +1,37 @@
-function humanizeWorkflowStep(step = "") {
+function humanizeWorkflowStep(step = "", systemFamily = "") {
+  const isAI =
+    systemFamily === "rag_system" ||
+    systemFamily === "ai_application" ||
+    systemFamily === "ml_prediction_system";
+
   const map = {
     authenticate: "authentication",
     create_or_update_resource: "resource creation and updates",
     retrieve_state: "state retrieval",
     handle_events: "event or webhook handling",
-    ingest: "content ingestion",
-    retrieve: "context retrieval",
-    generate: "LLM-driven response generation",
+
+    ingest: isAI ? "content ingestion" : "data intake",
+    retrieve: isAI ? "context retrieval" : "data retrieval",
+
+    generate: isAI ? "LLM-driven response generation" : "response generation",
+
     submit_input: "input submission",
-    run_inference: "model inference",
-    return_prediction: "prediction delivery",
+    run_inference: isAI ? "model inference" : "processing",
+    return_prediction: isAI ? "prediction delivery" : "result delivery",
+
     process_payment: "payment processing",
-    analyze: "analysis",
-    process: "processing",
-    respond: "response generation",
-    webhook: "webhook/event handling",
     payment: "payment execution",
-    llm: "LLM interaction",
-    predict: "prediction flow",
+
+    analyze: isAI ? "analysis" : "processing",
+    process: "processing",
+
+    respond: isAI ? "LLM response generation" : "system response",
+
+    webhook: "webhook/event handling",
+
+    llm: isAI ? "LLM interaction" : "request handling",
+
+    predict: isAI ? "prediction flow" : "decision flow",
   };
 
   return map[step] || String(step || "").replaceAll("_", " ");
@@ -74,7 +88,7 @@ function buildSystemDescription(card = {}) {
   }
 
   if (systemFamily === "rag_system") {
-    return `This project appears to be a RAG-based system in the ${domain} domain.`;
+    return `This project appears to be a retrieval-augmented AI system in the ${domain} domain.`;
   }
 
   if (systemFamily === "ai_application") {
@@ -116,13 +130,30 @@ function buildEvidenceText(card = {}) {
 }
 
 function buildWorkflowText(card = {}) {
-  const workflow = Array.isArray(card.workflow) ? card.workflow : [];
-  if (workflow.length === 0) return "";
+  const docFlows = card?.context_workflow?.business_flow_hints || [];
 
-  const humanized = workflow.slice(0, 5).map(humanizeWorkflowStep);
-  return `The likely workflow includes ${sentenceJoin(humanized)}.`;
+  const systemWorkflow = Array.isArray(card.workflow) ? card.workflow : [];
+
+  // ✅ PRIORITY: use document flow if present
+  if (docFlows.length > 0) {
+    const humanized = docFlows
+      .slice(0, 5)
+      .map((step) => humanizeWorkflowStep(step, card.system_family));
+
+    return `The documented workflow includes ${sentenceJoin(humanized)}.`;
+  }
+
+  // ❌ ONLY fallback if NO doc flow
+  if (systemWorkflow.length > 0) {
+    const humanized = systemWorkflow
+      .slice(0, 3)
+      .map((step) => humanizeWorkflowStep(step, card.system_family));
+
+    return `The likely workflow includes ${sentenceJoin(humanized)}.`;
+  }
+
+  return "";
 }
-
 function buildRiskText(card = {}) {
   const risks = Array.isArray(card.risk_tags) ? card.risk_tags : [];
   if (risks.length === 0) return "";
@@ -150,5 +181,11 @@ export function buildProjectSummary(card = {}) {
     buildMissingText(card),
   ].filter(Boolean);
 
-  return parts.join(" ");
+  const hasDocFlow = card?.context_workflow?.business_flow_hints?.length > 0;
+
+  const filteredParts = hasDocFlow
+    ? parts.filter((p) => !p.includes("likely workflow"))
+    : parts;
+
+  return filteredParts.join(" ");
 }
