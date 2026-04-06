@@ -2,32 +2,71 @@ import { extractSignals } from "./signalExtractor.js";
 import { detectProjectType } from "./projectClassifier.js";
 import { buildProjectCard } from "./projectCardBuilder.js";
 import { buildProjectSummary } from "./summaryBuilder.js";
+import { extractDocSignals } from "./docSignalExtractor.js";
+import { mergeProjectContext } from "./mergeProjectContext.js";
 
-export async function analyzeProject(input) {
-  const { openapi, projectNotes, githubData } = input;
+export async function analyzeProject(input = {}) {
+  const {
+    openapi = null,
+    projectNotes = "",
+    githubData = null,
 
+    // doc/jira/prd enrichment
+    documentsText = "",
+    prdText = "",
+    jiraText = "",
+    storyText = "",
+    acceptanceCriteriaText = "",
+    commentsText = "",
+    extraTexts = [],
+  } = input;
+
+  // -------------------------
+  // Base analysis (source of truth)
+  // -------------------------
   const signals = extractSignals({
     openapi,
     projectNotes,
     githubData,
+    documentsText,
   });
 
-  const projectType = detectProjectType(signals);
+  const classification = detectProjectType(signals);
 
-  const projectCard = buildProjectCard({
+  const baseProjectCard = buildProjectCard({
     signals,
-    projectType,
-    openapi,
-    projectNotes,
+    classification,
   });
 
-  const summary = buildProjectSummary(projectCard);
+  const baseSummary = buildProjectSummary(baseProjectCard);
 
-  return {
+  const baseAnalysis = {
     status: "completed",
-    summary,
-    confidence: projectCard.confidence || 0,
+    summary: baseSummary,
+    confidence: baseProjectCard.confidence || classification.confidence || 0,
     signals,
-    projectCard,
+    classification,
+    projectCard: baseProjectCard,
   };
+
+  // -------------------------
+  // Doc/Jira/PRD enrichment
+  // -------------------------
+  const docSignals = extractDocSignals({
+    documentsText,
+    prdText,
+    jiraText,
+    storyText,
+    acceptanceCriteriaText,
+    commentsText,
+    extraTexts,
+  });
+
+  // If no doc content, return base directly
+  if (!docSignals?.hasContent) {
+    return baseAnalysis;
+  }
+
+  // Merge enrichment without changing system truth
+  return mergeProjectContext(baseAnalysis, docSignals);
 }

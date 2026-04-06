@@ -1,50 +1,99 @@
+function pushUnique(arr, value) {
+  if (!value) return;
+  if (!arr.includes(value)) arr.push(value);
+}
+
+function getScore(map = {}, key) {
+  return Number(map?.[key] || 0);
+}
+
 export function inferWorkflow(signals = {}) {
   const flow = [];
 
-  const hasAISignals =
-    Boolean(signals.hasChat) ||
-    Boolean(signals.hasSearch) ||
-    Boolean(signals.hasPredict) ||
-    Boolean(signals.hasPromptLikeInput) ||
-    Boolean(signals.hasConversationFlow) ||
-    Boolean(signals.hasRetrievalFlow) ||
-    Boolean(signals.hasLLMClues) ||
-    Boolean(signals.hasAIDescription);
+  const endpointCount = Array.isArray(signals?.endpoints)
+    ? signals.endpoints.length
+    : 0;
 
-  const hasRetrievalSignals =
-    Boolean(signals.hasSearch) || Boolean(signals.hasRetrievalFlow);
+  const hasEndpoints = endpointCount > 0;
 
-  const hasConversationSignals =
-    Boolean(signals.hasChat) || Boolean(signals.hasConversationFlow);
+  // -----------------------------
+  // Scores (NEW SYSTEM)
+  // -----------------------------
+  const ragScore = getScore(signals?.scores?.ai, "rag");
+  const llmScore = getScore(signals?.scores?.ai, "llm");
+  const mlScore = getScore(signals?.scores?.ai, "ml");
 
-  const hasModelSignals =
-    Boolean(signals.hasPredict) || Boolean(signals.hasLLMClues);
+  const retrieveScore = getScore(signals?.scores?.workflow, "retrieve");
+  const ingestScore = getScore(signals?.scores?.workflow, "ingest");
+  const llmWorkflowScore = getScore(signals?.scores?.workflow, "llm");
+  const predictWorkflowScore = getScore(signals?.scores?.workflow, "predict");
+  const paymentWorkflowScore = getScore(signals?.scores?.workflow, "payment");
+  const webhookWorkflowScore = getScore(signals?.scores?.workflow, "webhook");
 
-  // AI-style ingestion should only happen when upload/file input
-  // is connected to an AI or retrieval-style workflow.
-  if (signals.hasUpload && (hasRetrievalSignals || hasAISignals)) {
-    flow.push("ingest");
+  const openapiOnly = Boolean(signals?.flags?.openapiOnly);
+  const hasStrongRagHints = Boolean(signals?.flags?.hasStrongRagHints);
+  const hasStrongPaymentsHints = Boolean(
+    signals?.flags?.hasStrongPaymentsHints,
+  );
+
+  const hasFileFlow =
+    Boolean(signals?.hasUpload) || Boolean(signals?.hasFileInput);
+
+  // -----------------------------
+  // SYSTEM DETECTION
+  // -----------------------------
+  const isRAG =
+    !openapiOnly &&
+    hasStrongRagHints &&
+    ragScore >= 3 &&
+    retrieveScore >= 1 &&
+    (ingestScore >= 1 || hasFileFlow || llmScore >= 1);
+
+  const isLLM =
+    !isRAG &&
+    (llmScore >= 2 || llmWorkflowScore >= 1.5 || Boolean(signals?.hasChat));
+
+  const isML =
+    mlScore >= 2 && (predictWorkflowScore >= 1 || Boolean(signals?.hasPredict));
+
+  const isTransactional =
+    hasStrongPaymentsHints ||
+    paymentWorkflowScore >= 2 ||
+    getScore(signals?.scores?.domain, "banking_finance") >= 4;
+
+  // -----------------------------
+  // WORKFLOW BUILDING
+  // -----------------------------
+
+  // 🧠 RAG SYSTEM
+  if (isRAG) {
+    if (ingestScore >= 1 || hasFileFlow) pushUnique(flow, "ingest");
+    if (retrieveScore >= 1) pushUnique(flow, "retrieve");
+    pushUnique(flow, "llm");
   }
 
-  if (hasRetrievalSignals) {
-    flow.push("retrieve");
+  // 💬 LLM SYSTEM
+  else if (isLLM) {
+    pushUnique(flow, "llm");
   }
 
-  if (hasConversationSignals) {
-    flow.push("llm");
+  // 🤖 ML SYSTEM
+  if (isML) {
+    pushUnique(flow, "predict");
   }
 
-  if (hasModelSignals) {
-    flow.push("predict");
+  // 💳 TRANSACTIONAL SYSTEM (Stripe type)
+  if (isTransactional) {
+    pushUnique(flow, "transaction");
+
+    if (webhookWorkflowScore > 0) {
+      pushUnique(flow, "webhook");
+    }
   }
 
-  // For non-AI operational APIs, classify as CRUD if endpoints exist
-  // but no AI workflow was detected.
-  const hasEndpoints =
-    Array.isArray(signals.endpoints) && signals.endpoints.length > 0;
-
+  // 🧱 FALLBACK (pure API)
   if (hasEndpoints && flow.length === 0) {
-    flow.push("crud");
+    pushUnique(flow, "crud");
   }
 
   return [...new Set(flow)];
