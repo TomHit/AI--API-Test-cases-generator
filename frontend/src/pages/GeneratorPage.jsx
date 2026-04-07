@@ -3,6 +3,7 @@ import { List } from "react-window";
 import EndpointSelector from "../components/EndpointSelector";
 import ResultsSummary from "../components/ResultsSummary";
 import { TEST_CASE_CSV_COLUMNS } from "../utils/testCaseColumns";
+import { apiRequest } from "../utils/apiClient";
 
 const RUNNING_STEPS = [
   "Reading API specification",
@@ -228,6 +229,11 @@ export default function GeneratorPage({
   const [endpoints, setEndpoints] = useState([]);
   const [tableRows, setTableRows] = useState([]);
 
+  const [docFile, setDocFile] = React.useState(null);
+  const [docLoading, setDocLoading] = React.useState(false);
+  const [docResult, setDocResult] = React.useState(null);
+  const [docError, setDocError] = React.useState(null);
+
   const [selection, setSelection] = useState({
     selected_endpoint_ids: [],
     filter: { q: "", method: "ALL", authOnly: false, tag: "ALL" },
@@ -334,6 +340,31 @@ export default function GeneratorPage({
     }
   }, [activeSection, run?.run_id]);
 
+  const handleDocUpload = async () => {
+    if (!docFile) return;
+
+    setDocLoading(true);
+    setDocError(null);
+    setDocResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", docFile);
+      formData.append("project_notes", "UI upload");
+
+      const payload = await apiRequest("/api/analyze-document", {
+        method: "POST",
+        body: formData,
+      });
+
+      setDocResult(payload.data.analysis);
+    } catch (err) {
+      setDocError(err.message || "Upload failed");
+    } finally {
+      setDocLoading(false);
+    }
+  };
+
   async function loadEndpoints(specSource = "") {
     if (!resolvedProjectId) {
       setEndpoints([]);
@@ -350,20 +381,11 @@ export default function GeneratorPage({
         url += `?spec_source=${encodeURIComponent(specSource)}`;
       }
 
-      const res = await fetch(url, {
-        headers: { Accept: "application/json" },
-      });
+      const payload = await apiRequest(url);
 
-      const text = await res.text();
-      const data = safeJsonParse(text);
-
-      if (!res.ok) {
-        throw new Error(
-          data?.message || `Failed to load endpoints (${res.status})`,
-        );
-      }
-
-      setEndpoints(Array.isArray(data) ? data : []);
+      setEndpoints(
+        Array.isArray(payload?.data?.items) ? payload.data.items : [],
+      );
     } catch (e) {
       setEndpointsErr(e.message || String(e));
       setEndpoints([]);
@@ -378,27 +400,15 @@ export default function GeneratorPage({
   }, [resolvedProjectId, resolvedOptions?.spec_source]);
 
   async function fetchRunCasesPage(runId, page = 1, pageSize = 100) {
-    const res = await fetch(
+    const payload = await apiRequest(
       `/api/runs/${encodeURIComponent(runId)}/cases?page=${page}&page_size=${pageSize}`,
-      {
-        headers: { Accept: "application/json" },
-      },
     );
 
-    const text = await res.text();
-    const data = safeJsonParse(text);
-
-    if (!res.ok) {
-      throw new Error(
-        data?.message || `Failed to load run cases (${res.status})`,
-      );
-    }
-
     return {
-      cases: Array.isArray(data?.cases) ? data.cases : [],
-      total_cases: Number(data?.total_cases || 0),
-      page: Number(data?.page || page),
-      page_size: Number(data?.page_size || pageSize),
+      cases: Array.isArray(payload?.data?.items) ? payload.data.items : [],
+      total_cases: Number(payload?.data?.pagination?.total || 0),
+      page: Number(payload?.data?.pagination?.page || page),
+      page_size: Number(payload?.data?.pagination?.page_size || pageSize),
     };
   }
 
@@ -528,22 +538,10 @@ export default function GeneratorPage({
   }
 
   async function fetchJobResult(jobId) {
-    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/result`, {
-      headers: { Accept: "application/json" },
-    });
-
-    const text = await res.text();
-    const data = safeJsonParse(text);
-
-    if (!res.ok) {
-      const err = new Error(
-        data?.message || `Failed to fetch job result (${res.status})`,
-      );
-      err.details = data?.error || null;
-      throw err;
-    }
-
-    return data?.result || null;
+    const payload = await apiRequest(
+      `/api/jobs/${encodeURIComponent(jobId)}/result`,
+    );
+    return payload?.data || null;
   }
 
   async function generate() {
@@ -598,27 +596,15 @@ export default function GeneratorPage({
     };
 
     try {
-      const res = await fetch("/api/generate", {
+      const responsePayload = await apiRequest("/api/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Accept: "application/json",
         },
         body: JSON.stringify(payload),
       });
 
-      const text = await res.text();
-      const data = safeJsonParse(text);
-
-      if (!res.ok) {
-        const err = new Error(
-          data?.message || `Generate failed: ${res.status}`,
-        );
-        err.details = data?.details || null;
-        throw err;
-      }
-
-      const jobId = data?.job_id;
+      const jobId = responsePayload?.data?.job_id;
 
       if (!jobId) {
         const err = new Error("Job ID was not returned by /api/generate.");
@@ -1657,6 +1643,88 @@ export default function GeneratorPage({
               <div style={styles.leftTitle}>APIs</div>
               <div style={styles.leftSubtle}>Endpoint Explorer</div>
             </div>
+            <div style={styles.docUploadCard}>
+              <div style={styles.sectionTitle}>Analyze PRD / Docs</div>
+
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx"
+                onChange={(e) => setDocFile(e.target.files?.[0] || null)}
+                style={styles.fileInput}
+              />
+
+              <button
+                type="button"
+                onClick={handleDocUpload}
+                disabled={!docFile || docLoading}
+                style={{
+                  ...styles.primaryBtnSmall,
+                  opacity: !docFile || docLoading ? 0.7 : 1,
+                }}
+              >
+                {docLoading ? "Analyzing..." : "Analyze Document"}
+              </button>
+
+              {docError ? <div style={styles.errorText}>{docError}</div> : null}
+            </div>
+
+            {docResult ? (
+              <div style={styles.docResultCard}>
+                <div style={styles.sectionTitle}>Analysis Result</div>
+
+                <div style={styles.summaryBlock}>
+                  {docResult.summary || "-"}
+                </div>
+
+                <div style={styles.metaRow}>
+                  <strong>Confidence:</strong> {docResult.confidence ?? "-"}
+                </div>
+
+                {docResult?.projectCard?.business_domain_label ? (
+                  <div style={styles.metaRow}>
+                    <strong>Domain:</strong>{" "}
+                    {docResult.projectCard.business_domain_label}
+                  </div>
+                ) : null}
+
+                {docResult?.projectCard?.project_type ? (
+                  <div style={styles.metaRow}>
+                    <strong>Type:</strong> {docResult.projectCard.project_type}
+                  </div>
+                ) : null}
+
+                {Array.isArray(
+                  docResult?.projectCard?.context_workflow?.business_flow_hints,
+                ) &&
+                docResult.projectCard.context_workflow.business_flow_hints
+                  .length > 0 ? (
+                  <div style={styles.block}>
+                    <div style={styles.blockTitle}>Workflow</div>
+                    <ul style={styles.detailList}>
+                      {docResult.projectCard.context_workflow.business_flow_hints
+                        .slice(0, 8)
+                        .map((item, i) => (
+                          <li key={i}>{String(item).replaceAll("_", " ")}</li>
+                        ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {Array.isArray(docResult?.projectCard?.risk_tags) &&
+                docResult.projectCard.risk_tags.length > 0 ? (
+                  <div style={styles.block}>
+                    <div style={styles.blockTitle}>Risks</div>
+                    <ul style={styles.detailList}>
+                      {docResult.projectCard.risk_tags
+                        .slice(0, 8)
+                        .map((item, i) => (
+                          <li key={i}>{String(item).replaceAll("_", " ")}</li>
+                        ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="generator-left-body" style={styles.explorerBody}>
               {endpointsLoading && (
@@ -1824,6 +1892,58 @@ const styles = {
     display: "grid",
     gap: 18,
     width: "100%",
+  },
+
+  docUploadCard: {
+    padding: 16,
+    border: "1px solid #1e293b",
+    borderRadius: 12,
+    marginBottom: 16,
+    background: "#0f172a",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+
+  docResultCard: {
+    padding: 16,
+    border: "1px solid #1e293b",
+    borderRadius: 12,
+    marginBottom: 16,
+    background: "#020617",
+  },
+
+  fileInput: {
+    color: "#e2e8f0",
+  },
+
+  summaryBlock: {
+    fontSize: 14,
+    lineHeight: 1.6,
+    color: "#cbd5e1",
+    marginBottom: 12,
+  },
+
+  metaRow: {
+    fontSize: 13,
+    color: "#94a3b8",
+    marginBottom: 8,
+  },
+
+  block: {
+    marginTop: 12,
+  },
+
+  blockTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    marginBottom: 6,
+    color: "#e2e8f0",
+  },
+
+  errorText: {
+    color: "#ef4444",
+    fontSize: 13,
   },
 
   notice: {

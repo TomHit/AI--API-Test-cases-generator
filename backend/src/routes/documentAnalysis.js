@@ -23,6 +23,12 @@ router.post("/analyze-document", upload.single("file"), async (req, res) => {
       return res.status(400).json({
         ok: false,
         message: "file is required",
+        data: null,
+        meta: {},
+        error: {
+          code: "FILE_REQUIRED",
+          details: null,
+        },
       });
     }
 
@@ -56,27 +62,38 @@ router.post("/analyze-document", upload.single("file"), async (req, res) => {
 
     return res.status(200).json({
       ok: true,
-      file: {
-        original_name: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
+      message: "Document analyzed successfully",
+      data: {
+        file: {
+          original_name: req.file.originalname,
+          mimetype: req.file.mimetype,
+          size: req.file.size,
+        },
+        ingestion: {
+          kind: ingested.kind || null,
+          hasTextLayer:
+            typeof ingested.hasTextLayer === "boolean"
+              ? ingested.hasTextLayer
+              : null,
+          warnings: ingested.warnings || [],
+          text_length: String(ingested.text || "").length,
+        },
+        analysis: result, // 👈 IMPORTANT rename
       },
-      ingestion: {
-        kind: ingested.kind || null,
-        hasTextLayer:
-          typeof ingested.hasTextLayer === "boolean"
-            ? ingested.hasTextLayer
-            : null,
-        warnings: ingested.warnings || [],
-        text_length: String(ingested.text || "").length,
-      },
-      result,
+      meta: {},
+      error: null,
     });
   } catch (err) {
     console.error("POST /api/analyze-document failed:", err);
     return res.status(500).json({
       ok: false,
       message: err?.message || "Document analysis failed",
+      data: null,
+      meta: {},
+      error: {
+        code: "ANALYZE_DOCUMENT_FAILED",
+        details: err?.stack || null,
+      },
     });
   } finally {
     if (tempPath) {

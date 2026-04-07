@@ -132,24 +132,15 @@ function buildEvidenceText(card = {}) {
 function buildWorkflowText(card = {}) {
   const docFlows = card?.context_workflow?.business_flow_hints || [];
 
-  const systemWorkflow = Array.isArray(card.workflow) ? card.workflow : [];
-
-  // ✅ PRIORITY: use document flow if present
-  if (docFlows.length > 0) {
+  if (Array.isArray(docFlows) && docFlows.length > 0) {
     const humanized = docFlows
       .slice(0, 5)
-      .map((step) => humanizeWorkflowStep(step, card.system_family));
+      .map((step) => humanizeWorkflowStep(step, card.system_family))
+      .filter(Boolean);
 
-    return `The documented workflow includes ${sentenceJoin(humanized)}.`;
-  }
-
-  // ❌ ONLY fallback if NO doc flow
-  if (systemWorkflow.length > 0) {
-    const humanized = systemWorkflow
-      .slice(0, 3)
-      .map((step) => humanizeWorkflowStep(step, card.system_family));
-
-    return `The likely workflow includes ${sentenceJoin(humanized)}.`;
+    if (humanized.length > 0) {
+      return `The documented workflow includes ${sentenceJoin(humanized)}.`;
+    }
   }
 
   return "";
