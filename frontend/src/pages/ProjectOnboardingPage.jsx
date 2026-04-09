@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 function prettyJson(value) {
   try {
@@ -9,6 +10,7 @@ function prettyJson(value) {
 }
 
 export default function ProjectOnboardingPage({ onContinueToGeneration }) {
+  const navigate = useNavigate();
   const [githubLink, setGithubLink] = useState("");
   const [apiSpecLink, setApiSpecLink] = useState("");
   const [projectNotes, setProjectNotes] = useState("");
@@ -45,8 +47,6 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
 
       if (uploadedFiles.length > 0) {
         const formData = new FormData();
-
-        // 👇 IMPORTANT: backend expects "file"
         formData.append("file", uploadedFiles[0]);
 
         if (projectNotes.trim()) {
@@ -65,10 +65,8 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
           throw new Error(data?.message || "Document analysis failed.");
         }
 
-        // 👇 CRITICAL: correct mapping
         setAnalysisResult(data?.data?.analysis || null);
       } else {
-        // fallback (optional)
         const res = await fetch("/api/project-analysis", {
           method: "POST",
           headers: {
@@ -97,8 +95,11 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
 
   const projectCard = analysisResult?.projectCard || null;
   const confidence = analysisResult?.confidence;
-  const summary = analysisResult?.summary || "";
-  const signals = analysisResult?.signals || null;
+
+  const executiveSummary =
+    analysisResult?.executive_summary || analysisResult?.summary || "";
+
+  const qaSummary = analysisResult?.qa_summary || "";
 
   return (
     <div style={styles.page}>
@@ -108,14 +109,38 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
             grid-template-columns: 1fr !important;
           }
         }
-        @media (max-width: 860px) {
+        @media (max-width: 1200px) {
+  .io-hero-title {
+    font-size: 34px !important;
+    line-height: 1.12 !important;
+  }
+}
+@media (max-width: 640px) {
+  .io-hero-title {
+    font-size: 28px !important;
+    line-height: 1.16 !important;
+  }
+}
+        @media (max-width: 980px) {
           .io-top-row {
             grid-template-columns: 1fr !important;
           }
           .io-metric-grid {
             grid-template-columns: 1fr 1fr !important;
           }
+          .io-quick-stats {
+            grid-template-columns: 1fr !important;
+          }
         }
+        @media (max-width: 900px) {
+  .io-flow-strip {
+    grid-template-columns: 1fr !important;
+    row-gap: 10px !important;
+  }
+  .io-flow-divider {
+    display: none !important;
+  }
+}
         @media (max-width: 640px) {
           .io-metric-grid {
             grid-template-columns: 1fr !important;
@@ -123,8 +148,14 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
           .io-card-grid {
             grid-template-columns: 1fr !important;
           }
+          .io-form-grid {
+            grid-template-columns: 1fr !important;
+          }
         }
       `}</style>
+
+      <div style={styles.pageGlowOne} />
+      <div style={styles.pageGlowTwo} />
 
       <div style={styles.shell}>
         <div className="io-top-row" style={styles.topRow}>
@@ -140,15 +171,40 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
             </div>
 
             <div style={styles.heroBadge}>Project Analysis</div>
-            <h1 style={styles.heroTitle}>
-              Analyze your project first. Generate eval and red-team cases after
-              understanding.
+
+            <h1 className="io-hero-title" style={styles.heroTitle}>
+              Analyze your project first.
+              <br />
+              Generate eval and red-team cases after understanding.
             </h1>
+
             <p style={styles.heroText}>
-              Upload your docs, repo link, API spec, or notes. IntOps will build
-              a real project summary and structured project card from your
-              analysis backend.
+              Upload documents, link your repository, add your API spec, or
+              paste project notes. IntOps turns raw project input into a
+              structured summary that can guide downstream test generation.
             </p>
+
+            <div className="io-flow-strip" style={styles.flowStrip}>
+              <div style={styles.flowStepActive}>1. Add sources</div>
+              <div className="io-flow-divider" style={styles.flowDivider} />
+              <div
+                style={
+                  analysisResult ? styles.flowStepDone : styles.flowStepPending
+                }
+              >
+                2. Review analysis
+              </div>
+              <div style={styles.flowDivider} />
+              <div
+                style={
+                  analysisResult
+                    ? styles.flowStepActive
+                    : styles.flowStepPending
+                }
+              >
+                3. Continue to generation
+              </div>
+            </div>
 
             <div className="io-metric-grid" style={styles.metricGrid}>
               <div style={styles.metricCard}>
@@ -159,12 +215,14 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
                     : "--"}
                 </div>
               </div>
+
               <div style={styles.metricCard}>
                 <div style={styles.metricLabel}>Project type</div>
                 <div style={styles.metricValueSmall}>
                   {projectCard?.project_type || "--"}
                 </div>
               </div>
+
               <div style={styles.metricCard}>
                 <div style={styles.metricLabel}>Risk tags</div>
                 <div style={styles.metricValue}>
@@ -182,12 +240,13 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
                 <div style={styles.sectionEyebrow}>Project intake</div>
                 <h2 style={styles.sectionTitle}>Sources</h2>
                 <p style={styles.sectionText}>
-                  Add whatever you have. The backend will analyze real inputs.
+                  Add one or more sources. The backend will analyze real inputs
+                  and return a project-aware summary.
                 </p>
               </div>
             </div>
 
-            <div style={styles.formGrid}>
+            <div className="io-form-grid" style={styles.formGrid}>
               <label style={styles.fieldFull}>
                 <span style={styles.label}>Upload documents</span>
                 <input
@@ -203,8 +262,8 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
                     Drop files here or click to upload
                   </div>
                   <div style={styles.uploadSub}>
-                    PDF, Word, text, JSON, YAML, architecture notes, prompt
-                    files
+                    PDF, Word, text, JSON, YAML, architecture notes, product
+                    summaries, PRDs, and prompt files
                   </div>
                 </label>
               </label>
@@ -235,8 +294,8 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
                 <span style={styles.label}>Project notes</span>
                 <textarea
                   style={styles.textarea}
-                  rows={5}
-                  placeholder="Paste architecture notes, AI flow, business purpose, or system summary..."
+                  rows={6}
+                  placeholder="Paste architecture notes, AI flow, business purpose, user journeys, constraints, or system summary..."
                   value={projectNotes}
                   onChange={(e) => setProjectNotes(e.target.value)}
                 />
@@ -263,6 +322,7 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
                 disabled={!canAnalyze || isAnalyzing}
                 style={{
                   ...styles.primaryBtn,
+                  ...styles.analyzeBtn,
                   opacity: !canAnalyze || isAnalyzing ? 0.7 : 1,
                   cursor:
                     !canAnalyze || isAnalyzing ? "not-allowed" : "pointer",
@@ -284,34 +344,58 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
 
         <div className="io-main-grid" style={styles.mainGrid}>
           <section style={styles.analysisCard}>
-            <div style={styles.sectionHead}>
-              <div>
-                <div style={styles.sectionEyebrow}>Analysis state</div>
-                <h2 style={styles.sectionTitle}>Backend response</h2>
-                <p style={styles.sectionText}>
-                  No fake progress. Only real request state and real response.
-                </p>
-              </div>
-            </div>
-
             {isAnalyzing ? (
               <div style={styles.stateCard}>
+                <div style={styles.stateBadge}>Running</div>
                 <div style={styles.stateTitle}>Analysis in progress</div>
                 <div style={styles.stateText}>
-                  Waiting for the backend intelligence layer to return summary
-                  and project card.
+                  We are extracting project intent, workflow hints, risks, and
+                  structured QA context from your inputs.
                 </div>
               </div>
             ) : analysisResult ? (
-              <div style={styles.findingsPanel}>
-                <div style={styles.findingsTitle}>Returned signals</div>
-                <pre style={styles.signalBlock}>{prettyJson(signals)}</pre>
+              <div style={styles.stateCard}>
+                <div style={styles.stateBadgeSuccess}>Ready</div>
+                <div style={styles.stateTitle}>Analysis complete</div>
+                <div style={styles.stateText}>
+                  Review the summary and structured project card, then continue
+                  into the workspace to generate tests.
+                </div>
+
+                <div className="io-quick-stats" style={styles.quickStats}>
+                  <div style={styles.quickStat}>
+                    <div style={styles.quickStatLabel}>Confidence</div>
+                    <div style={styles.quickStatValue}>
+                      {typeof confidence === "number"
+                        ? `${Math.round(confidence * 100)}%`
+                        : "--"}
+                    </div>
+                  </div>
+
+                  <div style={styles.quickStat}>
+                    <div style={styles.quickStatLabel}>Project type</div>
+                    <div style={styles.quickStatValueSmall}>
+                      {projectCard?.project_type || "--"}
+                    </div>
+                  </div>
+
+                  <div style={styles.quickStat}>
+                    <div style={styles.quickStatLabel}>Risk tags</div>
+                    <div style={styles.quickStatValue}>
+                      {Array.isArray(projectCard?.risk_tags)
+                        ? projectCard.risk_tags.length
+                        : "--"}
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               <div style={styles.stateCard}>
-                <div style={styles.stateTitle}>No analysis yet</div>
+                <div style={styles.stateBadgeMuted}>Waiting</div>
+                <div style={styles.stateTitle}>Add inputs to begin</div>
                 <div style={styles.stateText}>
-                  Add source data and run analysis to populate this section.
+                  Upload files, paste notes, or provide repo/spec links to
+                  generate an intelligent project summary.
                 </div>
               </div>
             )}
@@ -321,12 +405,10 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
             <div style={styles.outputTop}>
               <div>
                 <div style={styles.sectionEyebrow}>Output</div>
-                <h2 style={styles.outputTitleDark}>
-                  Project summary + project card
-                </h2>
+                <h2 style={styles.outputTitleDark}>Analysis output</h2>
                 <p style={styles.outputTextDark}>
-                  This is the real analysis output that should drive test
-                  generation.
+                  Review the executive summary, QA view, and structured project
+                  card before generating tests.
                 </p>
               </div>
 
@@ -341,6 +423,7 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
                 >
                   Summary
                 </button>
+
                 <button
                   type="button"
                   onClick={() => setActiveTab("card")}
@@ -359,14 +442,22 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
                 <div style={styles.emptyHero}>
                   <div style={styles.emptyTitle}>No real output yet</div>
                   <div style={styles.emptyText}>
-                    This panel will render only backend-returned data.
+                    Run analysis to render the executive summary, QA context,
+                    and structured project card here.
                   </div>
                 </div>
               ) : activeTab === "summary" ? (
                 <>
                   <div style={styles.summaryPanel}>
-                    <div style={styles.summaryTitle}>Project Summary</div>
-                    <div style={styles.summaryText}>{summary || "--"}</div>
+                    <div style={styles.summaryTitle}>Executive Summary</div>
+                    <div style={styles.summaryText}>
+                      {executiveSummary || "--"}
+                    </div>
+                  </div>
+
+                  <div style={styles.summaryPanel}>
+                    <div style={styles.summaryTitle}>QA Summary</div>
+                    <pre style={styles.codeBlock}>{qaSummary || "--"}</pre>
                   </div>
 
                   <div className="io-card-grid" style={styles.cardGrid}>
@@ -457,17 +548,37 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
               <button type="button" style={styles.secondaryBtn}>
                 Edit Summary
               </button>
+
               <button
                 type="button"
-                style={styles.primaryBtn}
+                style={{
+                  ...styles.primaryBtn,
+                  ...styles.continueBtn,
+                  ...(!analysisResult ? styles.continueBtnDisabled : {}),
+                }}
                 onClick={() => {
+                  if (!analysisResult) return;
+
                   if (typeof onContinueToGeneration === "function") {
                     onContinueToGeneration();
+                    return;
                   }
+
+                  navigate("/workspace");
                 }}
                 disabled={!analysisResult}
+                title={
+                  analysisResult
+                    ? "Continue to workspace"
+                    : "Run project analysis first to continue"
+                }
               >
-                Continue to Generation
+                <span>
+                  {analysisResult
+                    ? "Continue to Generation"
+                    : "Analyze to Continue"}
+                </span>
+                <span style={styles.continueArrow}>→</span>
               </button>
             </div>
           </section>
@@ -479,13 +590,39 @@ export default function ProjectOnboardingPage({ onContinueToGeneration }) {
 
 const styles = {
   page: {
+    position: "relative",
     minHeight: "100vh",
     background:
-      "radial-gradient(circle at top left, rgba(38, 99, 255, 0.14), transparent 28%), linear-gradient(180deg, #071122 0%, #0b1427 100%)",
+      "radial-gradient(circle at top left, rgba(38, 99, 255, 0.16), transparent 28%), linear-gradient(180deg, #071122 0%, #0b1427 100%)",
     padding: "28px",
     boxSizing: "border-box",
+    overflow: "hidden",
+  },
+  pageGlowOne: {
+    position: "absolute",
+    top: -120,
+    left: -80,
+    width: 380,
+    height: 380,
+    borderRadius: "50%",
+    background: "rgba(79, 124, 255, 0.15)",
+    filter: "blur(80px)",
+    pointerEvents: "none",
+  },
+  pageGlowTwo: {
+    position: "absolute",
+    right: -120,
+    top: 120,
+    width: 360,
+    height: 360,
+    borderRadius: "50%",
+    background: "rgba(24, 87, 255, 0.12)",
+    filter: "blur(100px)",
+    pointerEvents: "none",
   },
   shell: {
+    position: "relative",
+    zIndex: 1,
     maxWidth: 1520,
     margin: "0 auto",
     display: "flex",
@@ -508,9 +645,10 @@ const styles = {
     borderRadius: 30,
     padding: 32,
     background:
-      "linear-gradient(180deg, rgba(10, 20, 39, 0.92) 0%, rgba(10, 22, 42, 0.82) 100%)",
+      "linear-gradient(180deg, rgba(10, 20, 39, 0.94) 0%, rgba(10, 22, 42, 0.86) 100%)",
     boxShadow: "0 28px 80px rgba(0, 0, 0, 0.30)",
     color: "#ffffff",
+    backdropFilter: "blur(14px)",
   },
   intakeCard: {
     border: "1px solid rgba(151, 181, 255, 0.18)",
@@ -531,10 +669,10 @@ const styles = {
   outputCard: {
     border: "1px solid rgba(151, 181, 255, 0.16)",
     borderRadius: 30,
-    padding: 28,
+    padding: 32,
     background:
-      "linear-gradient(180deg, rgba(244, 248, 255, 0.98) 0%, rgba(235, 242, 252, 0.96) 100%)",
-    boxShadow: "0 28px 80px rgba(0, 0, 0, 0.26)",
+      "linear-gradient(180deg, rgba(248, 251, 255, 0.99) 0%, rgba(239, 245, 255, 0.97) 100%)",
+    boxShadow: "0 28px 80px rgba(0, 0, 0, 0.18)",
     minHeight: 760,
     display: "flex",
     flexDirection: "column",
@@ -546,12 +684,12 @@ const styles = {
     marginBottom: 28,
   },
   brandMark: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 58,
+    height: 58,
+    borderRadius: 18,
     display: "grid",
     placeItems: "center",
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 900,
     color: "#ffffff",
     background:
@@ -559,7 +697,7 @@ const styles = {
     boxShadow: "0 18px 40px rgba(36, 99, 255, 0.35)",
   },
   brandTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 800,
     letterSpacing: "-0.02em",
   },
@@ -571,7 +709,7 @@ const styles = {
   heroBadge: {
     display: "inline-flex",
     alignItems: "center",
-    height: 34,
+    height: 36,
     padding: "0 14px",
     borderRadius: 999,
     background: "rgba(98, 138, 255, 0.12)",
@@ -585,18 +723,69 @@ const styles = {
   },
   heroTitle: {
     margin: 0,
-    fontSize: 42,
+    fontSize: 40,
     lineHeight: 1.08,
     letterSpacing: "-0.04em",
     fontWeight: 900,
-    maxWidth: 760,
+    maxWidth: 700,
   },
   heroText: {
-    margin: "18px 0 0 0",
+    margin: "16px 0 0 0",
     color: "rgba(219, 228, 255, 0.82)",
-    fontSize: 17,
-    lineHeight: 1.7,
-    maxWidth: 820,
+    fontSize: 16,
+    lineHeight: 1.75,
+    maxWidth: 700,
+  },
+  flowStrip: {
+    display: "grid",
+    gridTemplateColumns: "max-content 24px max-content 24px max-content",
+    alignItems: "center",
+    columnGap: 12,
+    rowGap: 0,
+    marginTop: 24,
+    paddingTop: 20,
+    borderTop: "1px solid rgba(151, 181, 255, 0.12)",
+  },
+  flowStepActive: {
+    height: 34,
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "0 14px",
+    borderRadius: 999,
+    background: "rgba(79, 124, 255, 0.18)",
+    border: "1px solid rgba(129, 163, 255, 0.24)",
+    color: "#eaf1ff",
+    fontSize: 13,
+    fontWeight: 800,
+  },
+  flowStepDone: {
+    height: 34,
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "0 14px",
+    borderRadius: 999,
+    background: "rgba(36, 197, 94, 0.14)",
+    border: "1px solid rgba(74, 222, 128, 0.24)",
+    color: "#dfffea",
+    fontSize: 13,
+    fontWeight: 800,
+  },
+  flowStepPending: {
+    height: 34,
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "0 14px",
+    borderRadius: 999,
+    background: "rgba(255, 255, 255, 0.05)",
+    border: "1px solid rgba(151, 181, 255, 0.12)",
+    color: "rgba(214, 228, 255, 0.72)",
+    fontSize: 13,
+    fontWeight: 700,
+  },
+  flowDivider: {
+    width: 24,
+    height: 1,
+    background: "rgba(151, 181, 255, 0.22)",
   },
   metricGrid: {
     display: "grid",
@@ -674,6 +863,7 @@ const styles = {
     color: "#5c7396",
     fontSize: 15,
     lineHeight: 1.6,
+    maxWidth: 680,
   },
   formGrid: {
     display: "grid",
@@ -698,7 +888,7 @@ const styles = {
     letterSpacing: "0.01em",
   },
   input: {
-    height: 52,
+    height: 54,
     borderRadius: 16,
     border: "1px solid rgba(154, 178, 227, 0.18)",
     background: "rgba(255, 255, 255, 0.05)",
@@ -709,7 +899,7 @@ const styles = {
     boxSizing: "border-box",
   },
   textarea: {
-    minHeight: 138,
+    minHeight: 146,
     borderRadius: 18,
     border: "1px solid rgba(154, 178, 227, 0.18)",
     background: "rgba(255, 255, 255, 0.05)",
@@ -719,9 +909,10 @@ const styles = {
     outline: "none",
     resize: "vertical",
     boxSizing: "border-box",
+    lineHeight: 1.6,
   },
   uploadBox: {
-    minHeight: 122,
+    minHeight: 132,
     borderRadius: 20,
     border: "1px dashed rgba(135, 167, 243, 0.34)",
     background:
@@ -772,7 +963,7 @@ const styles = {
     flexWrap: "wrap",
   },
   primaryBtn: {
-    height: 50,
+    height: 52,
     borderRadius: 16,
     border: "none",
     padding: "0 20px",
@@ -786,9 +977,15 @@ const styles = {
     gap: 10,
     boxShadow: "0 18px 40px rgba(37, 99, 255, 0.34)",
     cursor: "pointer",
+    transition:
+      "transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease",
+  },
+  analyzeBtn: {
+    minWidth: 170,
+    justifyContent: "center",
   },
   secondaryBtn: {
-    height: 50,
+    height: 52,
     borderRadius: 16,
     border: "1px solid rgba(155, 176, 216, 0.32)",
     padding: "0 18px",
@@ -810,10 +1007,49 @@ const styles = {
   },
   stateCard: {
     borderRadius: 22,
-    padding: 20,
+    padding: 22,
     background:
       "linear-gradient(180deg, rgba(17, 31, 56, 0.78) 0%, rgba(12, 22, 41, 0.88) 100%)",
     border: "1px solid rgba(145, 172, 232, 0.14)",
+  },
+  stateBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: 28,
+    padding: "0 12px",
+    borderRadius: 999,
+    background: "rgba(79, 124, 255, 0.16)",
+    border: "1px solid rgba(129, 163, 255, 0.22)",
+    color: "#dce8ff",
+    fontSize: 12,
+    fontWeight: 800,
+    marginBottom: 14,
+  },
+  stateBadgeSuccess: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: 28,
+    padding: "0 12px",
+    borderRadius: 999,
+    background: "rgba(34, 197, 94, 0.16)",
+    border: "1px solid rgba(74, 222, 128, 0.24)",
+    color: "#ddffea",
+    fontSize: 12,
+    fontWeight: 800,
+    marginBottom: 14,
+  },
+  stateBadgeMuted: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: 28,
+    padding: "0 12px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(151, 181, 255, 0.12)",
+    color: "#d6e4ff",
+    fontSize: 12,
+    fontWeight: 800,
+    marginBottom: 14,
   },
   stateTitle: {
     fontSize: 18,
@@ -826,28 +1062,38 @@ const styles = {
     fontSize: 14,
     lineHeight: 1.7,
   },
-  findingsPanel: {
-    borderRadius: 22,
-    padding: 18,
-    background:
-      "linear-gradient(180deg, rgba(17, 31, 56, 0.78) 0%, rgba(12, 22, 41, 0.88) 100%)",
-    border: "1px solid rgba(145, 172, 232, 0.14)",
+  quickStats: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 12,
+    marginTop: 18,
   },
-  findingsTitle: {
-    fontSize: 14,
+  quickStat: {
+    borderRadius: 18,
+    padding: 14,
+    background: "rgba(255,255,255,0.05)",
+    border: "1px solid rgba(145, 172, 232, 0.12)",
+  },
+  quickStatLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    color: "rgba(199, 213, 255, 0.68)",
+    fontWeight: 700,
+  },
+  quickStatValue: {
+    marginTop: 8,
+    fontSize: 24,
+    fontWeight: 900,
+    color: "#ffffff",
+    letterSpacing: "-0.03em",
+  },
+  quickStatValueSmall: {
+    marginTop: 8,
+    fontSize: 16,
     fontWeight: 800,
-    color: "#f3f7ff",
-    marginBottom: 14,
-  },
-  signalBlock: {
-    margin: 0,
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    color: "#d6e4ff",
-    fontSize: 13,
-    lineHeight: 1.7,
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    color: "#ffffff",
+    lineHeight: 1.35,
   },
   outputTop: {
     display: "flex",
@@ -910,8 +1156,8 @@ const styles = {
     borderRadius: 24,
     background: "#ffffff",
     border: "1px solid #dbe6f5",
-    padding: 22,
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.06)",
+    padding: 24,
+    boxShadow: "0 18px 40px rgba(15, 23, 42, 0.07)",
   },
   summaryTitle: {
     fontSize: 18,
@@ -1007,15 +1253,20 @@ const styles = {
   codeBlock: {
     margin: 0,
     flex: 1,
-    overflow: "auto",
-    borderRadius: 18,
-    background: "#08101f",
-    color: "#cfe0ff",
-    padding: 18,
-    fontSize: 13,
-    lineHeight: 1.7,
+    overflowX: "auto",
+    overflowY: "auto",
+    borderRadius: 14,
+    background: "#0b1220",
+    color: "#e6edf3",
+    padding: 14,
+    fontSize: 12.5,
+    lineHeight: 1.6,
     fontFamily:
       "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    border: "1px solid rgba(148, 163, 184, 0.12)",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
   },
   outputActions: {
     display: "flex",
@@ -1023,5 +1274,20 @@ const styles = {
     gap: 12,
     marginTop: 22,
     flexWrap: "wrap",
+  },
+  continueBtn: {
+    minWidth: 240,
+    justifyContent: "center",
+    padding: "0 24px",
+  },
+  continueBtnDisabled: {
+    background: "linear-gradient(135deg, #94a3b8 0%, #7b8798 100%)",
+    boxShadow: "none",
+    cursor: "not-allowed",
+    opacity: 0.75,
+  },
+  continueArrow: {
+    fontSize: 18,
+    lineHeight: 1,
   },
 };

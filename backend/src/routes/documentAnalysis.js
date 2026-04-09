@@ -4,7 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 
 import { ingestDocument } from "../core/intelligence/documentIngestion.js";
-import { analyzeProject } from "../core/intelligence/analyzeProject.js";
+import { analyzeInput } from "../core/intelligence/analyzeInput.js";
 
 const router = express.Router();
 
@@ -54,10 +54,14 @@ router.post("/analyze-document", upload.single("file"), async (req, res) => {
       });
     }
 
-    const result = await analyzeProject({
+    const result = await analyzeInput({
       openapi: null,
       projectNotes: String(req.body?.project_notes || ""),
       documentsText: ingested.text,
+
+      story: String(req.body?.story || ""),
+      acceptanceCriteria: String(req.body?.acceptance_criteria || ""),
+      comments: String(req.body?.comments || ""),
     });
 
     return res.status(200).json({
@@ -78,7 +82,7 @@ router.post("/analyze-document", upload.single("file"), async (req, res) => {
           warnings: ingested.warnings || [],
           text_length: String(ingested.text || "").length,
         },
-        analysis: result, // 👈 IMPORTANT rename
+        analysis: result,
       },
       meta: {},
       error: null,

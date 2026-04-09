@@ -1,5 +1,5 @@
 import express from "express";
-import { analyzeProject } from "../core/intelligence/analyzeProject.js";
+import { analyzeInput } from "../core/intelligence/analyzeInput.js";
 
 const router = express.Router();
 
@@ -31,8 +31,8 @@ router.post("/", async (req, res) => {
       openapi = await specRes.json();
     }
 
-    console.log("calling analyzeProject...");
-    const result = await analyzeProject({
+    console.log("calling analyzeInput...");
+    const result = await analyzeInput({
       openapi,
       projectNotes: project_notes || "",
       documentsText: documents_text || "",
@@ -43,7 +43,7 @@ router.post("/", async (req, res) => {
       commentsText: comments_text || "",
       extraTexts: Array.isArray(extra_texts) ? extra_texts : [],
     });
-    console.log("analyzeProject done");
+    console.log("analyzeInput done");
 
     return res.status(200).json(result);
   } catch (err) {

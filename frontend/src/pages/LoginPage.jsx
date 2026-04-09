@@ -83,7 +83,7 @@ export default function LoginPage() {
     }
 
     if (isIndividual) {
-      navigate("/workspace", {
+      navigate("/project-analysis", {
         state: {
           mode,
           email: form.email,
@@ -111,7 +111,7 @@ export default function LoginPage() {
         throw new Error(data?.message || "Organization login failed");
       }
 
-      navigate("/workspace", {
+      navigate("/project-analysis", {
         state: {
           mode,
           email: data.user?.email || form.email.trim(),

@@ -50,7 +50,7 @@ export default function WorkspacePlaceholderPage() {
     }),
   );
 
-  const [activeNav, setActiveNav] = useState("onboarding");
+  const [activeNav, setActiveNav] = useState("projects");
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [generatorSettings, setGeneratorSettings] = useState(
     DEFAULT_GENERATOR_SETTINGS,
@@ -85,15 +85,6 @@ export default function WorkspacePlaceholderPage() {
 
   function renderContent() {
     switch (activeNav) {
-      case "onboarding":
-        return (
-          <ProjectOnboardingPage
-            onContinueToGeneration={() => {
-              console.log("onContinueToGeneration fired");
-              setActiveNav("projects");
-            }}
-          />
-        );
       case "projects":
         return (
           <DashboardPage

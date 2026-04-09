@@ -113,3 +113,87 @@ export function detectRisks(signals = {}) {
 
   return [...new Set(risks)];
 }
+
+function mapFlowRisk(flow = "") {
+  const f = String(flow || "")
+    .toLowerCase()
+    .trim();
+
+  if (f.includes("initiation")) {
+    return {
+      risk: "invalid input and malformed requests",
+      test: "input validation and schema checks",
+    };
+  }
+
+  if (f.includes("validation")) {
+    return {
+      risk: "rule bypass or incorrect validation",
+      test: "business rule validation and boundary checks",
+    };
+  }
+
+  if (f.includes("authorization")) {
+    return {
+      risk: "duplicate transaction or unauthorized access",
+      test: "idempotency validation and authentication checks",
+    };
+  }
+
+  if (f.includes("response")) {
+    return {
+      risk: "incorrect response mapping or partial failure handling",
+      test: "response integrity and error handling validation",
+    };
+  }
+
+  if (f.includes("settlement")) {
+    return {
+      risk: "settlement mismatch or delayed reconciliation",
+      test: "settlement verification and reconciliation checks",
+    };
+  }
+
+  if (f.includes("refund")) {
+    return {
+      risk: "incorrect refund amount or reversal behavior",
+      test: "refund accuracy and reversal validation",
+    };
+  }
+
+  if (f.includes("dispute")) {
+    return {
+      risk: "inconsistent dispute lifecycle handling",
+      test: "dispute workflow validation",
+    };
+  }
+
+  if (f.includes("notification")) {
+    return {
+      risk: "notification failure after transaction state change",
+      test: "notification trigger and delivery validation",
+    };
+  }
+
+  return null;
+}
+
+export function buildFlowRiskMap(schema = {}) {
+  const flows = [
+    ...(schema?.workflows?.primary || []),
+    ...(schema?.workflows?.secondary || []),
+  ];
+
+  return flows
+    .map((flow) => {
+      const mapped = mapFlowRisk(flow);
+      if (!mapped) return null;
+
+      return {
+        flow,
+        risk: mapped.risk,
+        test: mapped.test,
+      };
+    })
+    .filter(Boolean);
+}

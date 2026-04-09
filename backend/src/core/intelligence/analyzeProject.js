@@ -4,6 +4,8 @@ import { buildProjectCard } from "./projectCardBuilder.js";
 import { buildProjectSummary } from "./summaryBuilder.js";
 import { extractDocSignals } from "./docSignalExtractor.js";
 import { mergeProjectContext } from "./mergeProjectContext.js";
+import { buildCanonicalSummary } from "./buildCanonicalSummary.js";
+import { renderExecutiveSummary, renderQaSummary } from "./summaryRenderers.js";
 
 export async function analyzeProject(input = {}) {
   const {
@@ -57,6 +59,9 @@ export async function analyzeProject(input = {}) {
   };
 
   const docSignals = extractDocSignals({
+    openapi,
+    projectNotes,
+    githubData,
     documentsText,
     prdText,
     jiraText,
@@ -67,8 +72,36 @@ export async function analyzeProject(input = {}) {
   });
 
   if (!docSignals?.hasContent) {
-    return baseAnalysis;
+    const canonicalSummary = buildCanonicalSummary({
+      baseAnalysis,
+      docSignals: {},
+    });
+
+    const executiveSummary = renderExecutiveSummary(canonicalSummary);
+    const qaSummary = renderQaSummary(canonicalSummary);
+
+    return {
+      ...baseAnalysis,
+      canonical_summary: canonicalSummary,
+      executive_summary: executiveSummary,
+      qa_summary: qaSummary,
+    };
   }
 
-  return mergeProjectContext(baseAnalysis, docSignals);
+  const mergedAnalysis = mergeProjectContext(baseAnalysis, docSignals);
+
+  const canonicalSummary = buildCanonicalSummary({
+    baseAnalysis: mergedAnalysis,
+    docSignals,
+  });
+
+  const executiveSummary = renderExecutiveSummary(canonicalSummary);
+  const qaSummary = renderQaSummary(canonicalSummary);
+
+  return {
+    ...mergedAnalysis,
+    canonical_summary: canonicalSummary,
+    executive_summary: executiveSummary,
+    qa_summary: qaSummary,
+  };
 }
