@@ -3,13 +3,23 @@ import { Navigate, useLocation } from "react-router-dom";
 import Sidebar from "../components/layout/Sidebar";
 import DashboardPage from "./DashboardPage";
 import GeneratorPage from "./GeneratorPage";
+import TestCasesPage from "./TestCasesPage";
 
 import ProjectOnboardingPage from "./ProjectOnboardingPage";
 
 const DEFAULT_GENERATOR_SETTINGS = {
   env: "staging",
   auth_profile: "",
-  include: ["contract", "schema", "negative", "auth"],
+  include: [
+    "contract",
+    "schema",
+    "negative",
+    "auth",
+    "functional",
+    "integration",
+    "database",
+    "reliability",
+  ],
   ai: false,
   generation_mode: "balanced",
   spec_source: "",
@@ -112,14 +122,9 @@ export default function WorkspacePlaceholderPage() {
 
       case "testCases":
         return (
-          <GeneratorPage
-            selectedProjectId={selectedProjectId}
-            generatorSettings={runGeneratorSettings}
-            activeSection="testCases"
+          <TestCasesPage
+            projectId={selectedProjectId}
             generatedRun={generatedRun}
-            onSaveGeneratedRun={setGeneratedRun}
-            onBack={() => setActiveNav("generate")}
-            userId={userId}
           />
         );
 

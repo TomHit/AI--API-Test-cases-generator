@@ -729,9 +729,9 @@ app.get("/api/runs/:runId/cases", async (req, res) => {
     const cases = (result.cases || []).map((row) => row.payload);
 
     return sendSuccess(res, {
-      run_id,
+      run_id: runId,
       page,
-      page_size,
+      page_size: pageSize,
       total_cases: result.total || 0,
       cases,
     });

@@ -1,6 +1,12 @@
 import React from "react";
 
-const TEST_TYPES = ["contract", "schema", "negative", "auth"];
+const CORE_TEST_TYPES = ["contract", "schema", "negative", "auth"];
+const ADVANCED_QA_TEST_TYPES = [
+  "functional",
+  "integration",
+  "database",
+  "reliability",
+];
 
 const DEFAULT_FORM_OPTIONS = {
   ai: false,
@@ -9,7 +15,16 @@ const DEFAULT_FORM_OPTIONS = {
   generation_mode: "balanced",
   spec_source: "",
   guidance: "",
-  include: ["contract", "schema", "negative", "auth"],
+  include: [
+    "contract",
+    "schema",
+    "negative",
+    "auth",
+    "functional",
+    "integration",
+    "database",
+    "reliability",
+  ],
 };
 
 function normalizeFormOptions(value = {}) {
@@ -117,7 +132,16 @@ export default function GenerationOptions({ options, onChange }) {
   function selectRecommended() {
     safeOnChange((prev) => ({
       ...normalizeFormOptions(prev || {}),
-      include: ["contract", "schema"],
+      include: [
+        "contract",
+        "schema",
+        "negative",
+        "auth",
+        "functional",
+        "integration",
+        "database",
+        "reliability",
+      ],
       generation_mode: "balanced",
     }));
   }
@@ -136,8 +160,21 @@ export default function GenerationOptions({ options, onChange }) {
           </div>
         </div>
 
+        <div style={styles.subSectionLabel}>Core Generation Types</div>
         <div style={styles.pillGrid}>
-          {TEST_TYPES.map((k) => (
+          {CORE_TEST_TYPES.map((k) => (
+            <TogglePill
+              key={k}
+              label={k}
+              checked={(safeOptions.include || []).includes(k)}
+              onChange={() => toggleInclude(k)}
+            />
+          ))}
+        </div>
+
+        <div style={styles.subSectionLabel}>Advanced QA Planning Types</div>
+        <div style={styles.pillGrid}>
+          {ADVANCED_QA_TEST_TYPES.map((k) => (
             <TogglePill
               key={k}
               label={k}
@@ -152,12 +189,7 @@ export default function GenerationOptions({ options, onChange }) {
             <input
               type="checkbox"
               checked={!!safeOptions.ai}
-              onChange={(e) =>
-                safeOnChange((prev) => ({
-                  ...(prev || {}),
-                  env: e.target.value,
-                }))
-              }
+              onChange={(e) => updateField("ai", e.target.checked)}
             />
             <span>Use AI enrichment</span>
           </label>
@@ -172,8 +204,9 @@ export default function GenerationOptions({ options, onChange }) {
         </div>
 
         <div style={styles.help}>
-          Best starting point for manual QA: contract + schema with balanced
-          generation.
+          Core types control current generation behavior. Advanced QA types are
+          for richer planning around functional, integration, database, and
+          reliability coverage from project context and Jira stories.
         </div>
       </section>
 
@@ -281,6 +314,16 @@ const styles = {
     gap: 16,
     width: "100%",
     minWidth: 0,
+  },
+
+  subSectionLabel: {
+    fontSize: 12,
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    color: "#475569",
+    marginTop: 4,
+    marginBottom: -2,
   },
 
   heroNote: {

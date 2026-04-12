@@ -38,13 +38,17 @@ export default function DashboardPage({
       });
 
       const text = await res.text();
-      const data = text ? JSON.parse(text) : [];
+      const payload = text ? JSON.parse(text) : null;
 
       if (!res.ok) {
-        throw new Error(data?.message || `Failed: ${res.status}`);
+        throw new Error(payload?.message || `Failed: ${res.status}`);
       }
 
-      setProjects(Array.isArray(data) ? data : []);
+      const items = Array.isArray(payload?.data?.projects)
+        ? payload.data.projects
+        : [];
+
+      setProjects(items);
     } catch (e) {
       setErr(e.message || String(e));
     } finally {
@@ -91,13 +95,21 @@ export default function DashboardPage({
       });
 
       const text = await res.text();
-      const data = text ? JSON.parse(text) : null;
+      const responsePayload = text ? JSON.parse(text) : null;
 
       if (!res.ok) {
-        throw new Error(data?.message || `Create failed: ${res.status}`);
+        throw new Error(
+          responsePayload?.message || `Create failed: ${res.status}`,
+        );
       }
 
-      setProjects((prev) => [data, ...prev]);
+      const createdProject = responsePayload?.data || null;
+
+      if (!createdProject) {
+        throw new Error("Project was created but response data is missing.");
+      }
+
+      setProjects((prev) => [createdProject, ...prev]);
       setShowCreateForm(false);
 
       setNewProject({
@@ -114,7 +126,6 @@ export default function DashboardPage({
       setCreating(false);
     }
   }
-
   return (
     <div className="projects-workspace">
       <section className="page-card">
@@ -354,7 +365,16 @@ export default function DashboardPage({
                 generatorSettings || {
                   env: "staging",
                   auth_profile: "",
-                  include: ["contract", "schema", "negative", "auth"],
+                  include: [
+                    "contract",
+                    "schema",
+                    "negative",
+                    "auth",
+                    "functional",
+                    "integration",
+                    "database",
+                    "reliability",
+                  ],
                   ai: false,
                   generation_mode: "balanced",
                   spec_source: "",

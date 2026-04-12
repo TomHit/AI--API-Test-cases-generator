@@ -1,19 +1,22 @@
 import React from "react";
 
 export default function ProjectCard({ project, onOpen }) {
-  const status = project?.docs_status || "missing";
+  const hasSpecSource = !!String(project?.spec_source || "").trim();
+
+  const derivedStatus =
+    project?.docs_status || (hasSpecSource ? "ok" : "missing");
 
   const statusLabel =
-    status === "ok"
+    derivedStatus === "ok"
       ? "Docs Ready"
-      : status === "error"
+      : derivedStatus === "error"
         ? "Docs Error"
         : "Docs Missing";
 
   const statusClass =
-    status === "ok"
+    derivedStatus === "ok"
       ? "status-pill success"
-      : status === "error"
+      : derivedStatus === "error"
         ? "status-pill danger"
         : "status-pill warning";
 

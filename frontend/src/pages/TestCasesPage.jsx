@@ -146,9 +146,9 @@ async function fetchAllRunCases(runId, signal) {
       throw new Error(`Failed to load run cases (${res.status})`);
     }
 
-    const data = await res.json();
-    const batch = safeArray(data?.cases);
-    totalCases = Number(data?.total_cases || 0);
+    const payload = await res.json();
+    const batch = safeArray(payload?.data?.cases);
+    totalCases = Number(payload?.data?.total_cases || 0);
 
     collected.push(...batch);
 
@@ -792,17 +792,17 @@ const styles = {
 
   title: {
     margin: 0,
-    fontSize: 34,
-    lineHeight: 1.05,
+    fontSize: 28,
+    lineHeight: 1.08,
     fontWeight: 900,
     color: "#f8fafc",
   },
 
   subtitle: {
-    margin: "10px 0 0",
+    margin: "8px 0 0",
     maxWidth: 720,
-    fontSize: 15,
-    lineHeight: 1.6,
+    fontSize: 13,
+    lineHeight: 1.5,
     color: "#94a3b8",
   },
 
@@ -845,8 +845,8 @@ const styles = {
   },
 
   statCard: {
-    borderRadius: 22,
-    padding: 20,
+    borderRadius: 18,
+    padding: 16,
     border: "1px solid rgba(148,163,184,.14)",
     background:
       "linear-gradient(180deg, rgba(15,23,42,.92), rgba(30,41,59,.90))",
@@ -861,11 +861,11 @@ const styles = {
   },
 
   statValue: {
-    fontSize: 42,
+    fontSize: 32,
     lineHeight: 1,
     fontWeight: 900,
     color: "#f8fafc",
-    marginBottom: 10,
+    marginBottom: 8,
   },
 
   statHelp: {
@@ -875,13 +875,11 @@ const styles = {
   },
 
   toolbarCard: {
-    borderRadius: 24,
-    padding: 22,
-    border: "1px solid rgba(148,163,184,.14)",
-    background: "rgba(15,23,42,.84)",
-    boxShadow: "0 14px 34px rgba(2,6,23,.14)",
+    border: "1px solid #e5e7eb",
+    borderRadius: 16,
+    background: "#fff",
+    padding: 14,
   },
-
   toolbarTop: {
     display: "flex",
     justifyContent: "space-between",
@@ -898,16 +896,16 @@ const styles = {
   },
 
   cardTitle: {
-    fontSize: 22,
-    fontWeight: 900,
-    color: "#f8fafc",
-    marginBottom: 6,
+    fontSize: 18,
+    fontWeight: 800,
+    color: "#0f172a",
+    marginBottom: 4,
   },
 
   cardSubtle: {
-    fontSize: 14,
-    lineHeight: 1.55,
-    color: "#94a3b8",
+    fontSize: 12,
+    lineHeight: 1.45,
+    color: "#64748b",
   },
 
   errorText: {
@@ -987,12 +985,12 @@ const styles = {
   },
 
   tableCard: {
-    borderRadius: 24,
-    padding: 18,
-    border: "1px solid rgba(148,163,184,.14)",
-    background: "rgba(15,23,42,.84)",
-    boxShadow: "0 14px 34px rgba(2,6,23,.14)",
+    border: "1px solid rgba(148,163,184,.16)",
+    borderRadius: 20,
+    background: "#ffffff",
+    padding: 12,
     minWidth: 0,
+    overflow: "hidden",
   },
 
   tableTop: {
@@ -1038,13 +1036,15 @@ const styles = {
     overflowY: "hidden",
     borderRadius: 18,
     border: "1px solid rgba(148,163,184,.12)",
-    background: "rgba(2,6,23,.24)",
+    background: "#ffffff",
   },
 
   table: {
     width: "100%",
+    minWidth: 980,
     borderCollapse: "separate",
     borderSpacing: 0,
+    background: "#ffffff",
   },
 
   th: {
@@ -1072,35 +1072,39 @@ const styles = {
 
   tr: {
     cursor: "pointer",
+    background: "#ffffff",
   },
 
   td: {
-    padding: "16px 18px",
-    borderBottom: "1px solid rgba(148,163,184,.08)",
+    padding: "10px 12px",
+    fontSize: 13,
+    lineHeight: 1.35,
+    color: "#0f172a",
+    borderTop: "1px solid #e5e7eb",
     verticalAlign: "top",
-    color: "#e2e8f0",
-    background: "transparent",
+    background: "#ffffff",
   },
 
   idText: {
-    fontSize: 13,
-    fontWeight: 800,
-    color: "#cbd5e1",
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#64748b",
+    lineHeight: 1.35,
     wordBreak: "break-word",
   },
 
   titleText: {
-    fontSize: 15,
-    fontWeight: 800,
-    lineHeight: 1.5,
-    color: "#f8fafc",
-    marginBottom: 6,
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#0f172a",
+    lineHeight: 1.35,
   },
 
   subText: {
+    marginTop: 4,
     fontSize: 12,
-    lineHeight: 1.5,
     color: "#64748b",
+    lineHeight: 1.3,
   },
 
   endpointWrap: {
@@ -1111,10 +1115,9 @@ const styles = {
   },
 
   endpointText: {
-    fontSize: 13,
-    lineHeight: 1.5,
-    color: "#cbd5e1",
-    wordBreak: "break-word",
+    fontSize: 12,
+    color: "#475569",
+    lineHeight: 1.3,
   },
 
   tag: {

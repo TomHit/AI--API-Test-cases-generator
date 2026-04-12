@@ -17,7 +17,16 @@ const RUNNING_STEPS = [
 const DEFAULT_OPTIONS = {
   env: "staging",
   auth_profile: "",
-  include: ["contract", "schema", "negative", "auth"],
+  include: [
+    "contract",
+    "schema",
+    "negative",
+    "auth",
+    "functional",
+    "integration",
+    "database",
+    "reliability",
+  ],
   ai: false,
   generation_mode: "balanced",
   spec_source: "",
@@ -220,7 +229,16 @@ export default function GeneratorPage({
       Array.isArray(resolvedOptions.include) &&
         resolvedOptions.include.length > 0
         ? resolvedOptions.include
-        : ["contract", "schema", "negative", "auth"],
+        : [
+            "contract",
+            "schema",
+            "negative",
+            "auth",
+            "functional",
+            "integration",
+            "database",
+            "reliability",
+          ],
     ),
   );
 
@@ -228,11 +246,6 @@ export default function GeneratorPage({
   const [endpointsErr, setEndpointsErr] = useState("");
   const [endpoints, setEndpoints] = useState([]);
   const [tableRows, setTableRows] = useState([]);
-
-  const [docFile, setDocFile] = React.useState(null);
-  const [docLoading, setDocLoading] = React.useState(false);
-  const [docResult, setDocResult] = React.useState(null);
-  const [docError, setDocError] = React.useState(null);
 
   const [selection, setSelection] = useState({
     selected_endpoint_ids: [],
@@ -340,31 +353,6 @@ export default function GeneratorPage({
     }
   }, [activeSection, run?.run_id]);
 
-  const handleDocUpload = async () => {
-    if (!docFile) return;
-
-    setDocLoading(true);
-    setDocError(null);
-    setDocResult(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", docFile);
-      formData.append("project_notes", "UI upload");
-
-      const payload = await apiRequest("/api/analyze-document", {
-        method: "POST",
-        body: formData,
-      });
-
-      setDocResult(payload.data.analysis);
-    } catch (err) {
-      setDocError(err.message || "Upload failed");
-    } finally {
-      setDocLoading(false);
-    }
-  };
-
   async function loadEndpoints(specSource = "") {
     if (!resolvedProjectId) {
       setEndpoints([]);
@@ -384,7 +372,7 @@ export default function GeneratorPage({
       const payload = await apiRequest(url);
 
       setEndpoints(
-        Array.isArray(payload?.data?.items) ? payload.data.items : [],
+        Array.isArray(payload?.data?.endpoints) ? payload.data.endpoints : [],
       );
     } catch (e) {
       setEndpointsErr(e.message || String(e));
@@ -405,10 +393,10 @@ export default function GeneratorPage({
     );
 
     return {
-      cases: Array.isArray(payload?.data?.items) ? payload.data.items : [],
-      total_cases: Number(payload?.data?.pagination?.total || 0),
-      page: Number(payload?.data?.pagination?.page || page),
-      page_size: Number(payload?.data?.pagination?.page_size || pageSize),
+      cases: Array.isArray(payload?.data?.cases) ? payload.data.cases : [],
+      total_cases: Number(payload?.data?.total_cases || 0),
+      page: Number(payload?.data?.page || page),
+      page_size: Number(payload?.data?.page_size || pageSize),
     };
   }
 
@@ -538,10 +526,7 @@ export default function GeneratorPage({
   }
 
   async function fetchJobResult(jobId) {
-    const payload = await apiRequest(
-      `/api/jobs/${encodeURIComponent(jobId)}/result`,
-    );
-    return payload?.data || null;
+    return await apiRequest(`/api/jobs/${encodeURIComponent(jobId)}/result`);
   }
 
   async function generate() {
@@ -604,11 +589,12 @@ export default function GeneratorPage({
         body: JSON.stringify(payload),
       });
 
-      const jobId = responsePayload?.data?.job_id;
+      const jobId = responsePayload?.job_id;
+      const queuedRunId = responsePayload?.run_id;
 
       if (!jobId) {
         const err = new Error("Job ID was not returned by /api/generate.");
-        err.details = data || null;
+        err.details = responsePayload || null;
         throw err;
       }
 
@@ -628,10 +614,11 @@ export default function GeneratorPage({
             try {
               closeStream?.();
 
-              const result = await fetchJobResult(jobId);
+              const jobResultPayload = await fetchJobResult(jobId);
+              const result = jobResultPayload?.result || null;
 
               const nextRun = {
-                run_id: result?.run_id || jobId,
+                run_id: queuedRunId || result?.run_id || null,
                 status: "done",
                 error: null,
                 generation_mode:
@@ -660,7 +647,7 @@ export default function GeneratorPage({
                 testplan: result?.testplan || null,
                 report:
                   result?.report ||
-                  (result?.run_id
+                  (queuedRunId
                     ? {
                         total_cases: "Saved to files",
                         needs_review: "-",
@@ -1643,88 +1630,6 @@ export default function GeneratorPage({
               <div style={styles.leftTitle}>APIs</div>
               <div style={styles.leftSubtle}>Endpoint Explorer</div>
             </div>
-            <div style={styles.docUploadCard}>
-              <div style={styles.sectionTitle}>Analyze PRD / Docs</div>
-
-              <input
-                type="file"
-                accept=".pdf,.doc,.docx"
-                onChange={(e) => setDocFile(e.target.files?.[0] || null)}
-                style={styles.fileInput}
-              />
-
-              <button
-                type="button"
-                onClick={handleDocUpload}
-                disabled={!docFile || docLoading}
-                style={{
-                  ...styles.primaryBtnSmall,
-                  opacity: !docFile || docLoading ? 0.7 : 1,
-                }}
-              >
-                {docLoading ? "Analyzing..." : "Analyze Document"}
-              </button>
-
-              {docError ? <div style={styles.errorText}>{docError}</div> : null}
-            </div>
-
-            {docResult ? (
-              <div style={styles.docResultCard}>
-                <div style={styles.sectionTitle}>Analysis Result</div>
-
-                <div style={styles.summaryBlock}>
-                  {docResult.summary || "-"}
-                </div>
-
-                <div style={styles.metaRow}>
-                  <strong>Confidence:</strong> {docResult.confidence ?? "-"}
-                </div>
-
-                {docResult?.projectCard?.business_domain_label ? (
-                  <div style={styles.metaRow}>
-                    <strong>Domain:</strong>{" "}
-                    {docResult.projectCard.business_domain_label}
-                  </div>
-                ) : null}
-
-                {docResult?.projectCard?.project_type ? (
-                  <div style={styles.metaRow}>
-                    <strong>Type:</strong> {docResult.projectCard.project_type}
-                  </div>
-                ) : null}
-
-                {Array.isArray(
-                  docResult?.projectCard?.context_workflow?.business_flow_hints,
-                ) &&
-                docResult.projectCard.context_workflow.business_flow_hints
-                  .length > 0 ? (
-                  <div style={styles.block}>
-                    <div style={styles.blockTitle}>Workflow</div>
-                    <ul style={styles.detailList}>
-                      {docResult.projectCard.context_workflow.business_flow_hints
-                        .slice(0, 8)
-                        .map((item, i) => (
-                          <li key={i}>{String(item).replaceAll("_", " ")}</li>
-                        ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {Array.isArray(docResult?.projectCard?.risk_tags) &&
-                docResult.projectCard.risk_tags.length > 0 ? (
-                  <div style={styles.block}>
-                    <div style={styles.blockTitle}>Risks</div>
-                    <ul style={styles.detailList}>
-                      {docResult.projectCard.risk_tags
-                        .slice(0, 8)
-                        .map((item, i) => (
-                          <li key={i}>{String(item).replaceAll("_", " ")}</li>
-                        ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
 
             <div className="generator-left-body" style={styles.explorerBody}>
               {endpointsLoading && (
