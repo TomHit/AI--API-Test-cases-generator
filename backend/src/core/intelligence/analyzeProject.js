@@ -78,7 +78,7 @@ export async function analyzeProject(input = {}) {
     });
 
     const executiveSummary = renderExecutiveSummary(canonicalSummary);
-    const qaSummary = renderQaSummary(canonicalSummary);
+    const qaSummary = renderQaSummary(canonicalSummary, docSignals);
 
     return {
       ...baseAnalysis,
@@ -96,7 +96,7 @@ export async function analyzeProject(input = {}) {
   });
 
   const executiveSummary = renderExecutiveSummary(canonicalSummary);
-  const qaSummary = renderQaSummary(canonicalSummary);
+  const qaSummary = renderQaSummary(canonicalSummary, docSignals);
 
   return {
     ...mergedAnalysis,

@@ -1045,6 +1045,128 @@ function buildDocSummary({
     .replace(/[□]/g, "→") // 🔥 FIX encoding issue
     .trim();
 }
+
+function buildQaSignals({
+  flows = [],
+  validations = [],
+  constraints = [],
+  edgeCases = [],
+  risks = [],
+  featureHints = [],
+}) {
+  const functional = [];
+  const integration = [];
+  const database = [];
+  const reliability = [];
+  const security = [];
+
+  const push = (arr, value) => {
+    if (value && !arr.includes(value)) arr.push(value);
+  };
+
+  // functional
+  for (const f of flows) {
+    if (f?.action) push(functional, f.action);
+  }
+
+  for (const v of validations) {
+    push(functional, v);
+  }
+
+  // integration
+  for (const f of flows) {
+    const text = `${f?.action || ""} ${f?.object || ""}`.toLowerCase();
+
+    if (
+      text.includes("api") ||
+      text.includes("gateway") ||
+      text.includes("provider") ||
+      text.includes("webhook") ||
+      text.includes("callback")
+    ) {
+      push(integration, f.action);
+    }
+  }
+
+  // database
+  for (const c of constraints) {
+    const lower = String(c || "").toLowerCase();
+    if (
+      lower.includes("store") ||
+      lower.includes("persist") ||
+      lower.includes("record") ||
+      lower.includes("save")
+    ) {
+      push(database, c);
+    }
+  }
+
+  for (const f of featureHints) {
+    const lower = String(f || "").toLowerCase();
+    if (
+      lower.includes("transaction") ||
+      lower.includes("order") ||
+      lower.includes("account") ||
+      lower.includes("payment")
+    ) {
+      push(database, f);
+    }
+  }
+
+  // reliability
+  for (const c of constraints) {
+    const lower = String(c || "").toLowerCase();
+    if (
+      lower.includes("retry") ||
+      lower.includes("timeout") ||
+      lower.includes("rate") ||
+      lower.includes("limit")
+    ) {
+      push(reliability, c);
+    }
+  }
+
+  for (const e of edgeCases) {
+    push(reliability, e);
+  }
+
+  // security from constraints
+  for (const c of constraints) {
+    const lower = String(c || "").toLowerCase();
+    if (
+      lower.includes("secure") ||
+      lower.includes("token") ||
+      lower.includes("encrypt") ||
+      lower.includes("authorization") ||
+      lower.includes("authentication")
+    ) {
+      push(security, c);
+    }
+  }
+
+  // security
+  for (const r of risks) {
+    const name = String(r?.name || "").toLowerCase();
+
+    if (
+      name.includes("auth") ||
+      name.includes("security") ||
+      name.includes("data") ||
+      name.includes("sensitive")
+    ) {
+      push(security, name.replaceAll("_", " "));
+    }
+  }
+
+  return {
+    functional,
+    integration,
+    database,
+    reliability,
+    security,
+  };
+}
+
 export function extractDocSignals(input = {}) {
   const rawText = extractRawText(input);
   const cleanText = String(rawText || "").trim();
@@ -1130,6 +1252,16 @@ export function extractDocSignals(input = {}) {
     featureHints,
     context,
   });
+
+  const qaSignals = buildQaSignals({
+    flows: flowResult.flows,
+    validations,
+    constraints,
+    edgeCases,
+    risks: riskResult.risks,
+    featureHints,
+  });
+
   const hasContent = cleanText.length > 0;
 
   const hasStructuredSignals =
@@ -1149,6 +1281,7 @@ export function extractDocSignals(input = {}) {
     hasStructuredSignals,
 
     summary,
+    qa_signals: qaSignals,
 
     actors,
     flows: flowResult.flows,

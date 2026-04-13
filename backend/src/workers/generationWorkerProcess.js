@@ -1,9 +1,10 @@
+import "dotenv/config";
 import { Worker } from "bullmq";
 import { GENERATION_QUEUE_NAME } from "../jobs/generationQueue.js";
 import { runGenerationJob } from "../jobs/generationWorker.js";
 
 const connection = {
-  url: process.env.REDIS_URL || "redis://127.0.0.1:6379",
+  url: process.env.REDIS_URL || "redis://127.0.0.1:6380",
 };
 
 export const generationWorkerProcess = new Worker(

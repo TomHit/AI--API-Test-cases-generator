@@ -6,90 +6,93 @@ function normalizeText(value = "") {
     .trim();
 }
 
+function unique(items = []) {
+  return [
+    ...new Set((items || []).map((x) => normalizeText(x)).filter(Boolean)),
+  ];
+}
+
 function joinList(items = [], conjunction = "and") {
-  const clean = (items || []).map((x) => normalizeText(x)).filter(Boolean);
+  const clean = unique(items);
 
   if (clean.length === 0) return "";
   if (clean.length === 1) return clean[0];
   if (clean.length === 2) return `${clean[0]} ${conjunction} ${clean[1]}`;
 
-  return `${clean.slice(0, -1).join(", ")}, ${conjunction} ${
-    clean[clean.length - 1]
-  }`;
+  return `${clean.slice(0, -1).join(", ")}, ${conjunction} ${clean[clean.length - 1]}`;
 }
 
 function humanizeFlow(items = []) {
-  return (items || [])
-    .map((x) => normalizeText(x))
-    .filter(Boolean)
-    .join(" → ");
+  return unique(items).join(" → ");
 }
 
 function limit(items = [], count = 5) {
-  return (items || []).filter(Boolean).slice(0, count);
+  return unique(items).slice(0, count);
+}
+
+function sectionBlock(title, items = []) {
+  const clean = limit(items, 8);
+  if (!clean.length) return "";
+
+  return `${title}:\n${clean.map((x) => `- ${normalizeText(x)}`).join("\n")}`;
+}
+
+function collectFunctional(summary = {}, storySignals = {}) {
+  return unique([
+    ...(summary?.workflows?.primary || []),
+    ...(summary?.workflows?.secondary || []),
+    ...(summary?.capabilities || []),
+    ...(storySignals?.qa_signals?.functional || []),
+  ]);
+}
+
+function collectIntegration(summary = {}, storySignals = {}) {
+  return unique([
+    ...(summary?.system_identity?.integration_points || []),
+    ...(summary?.operations?.dependencies || []),
+    ...(storySignals?.systems || []),
+    ...(storySignals?.qa_signals?.integration || []),
+  ]);
+}
+
+function collectDatabase(summary = {}, storySignals = {}) {
+  return unique([
+    ...(summary?.data?.entities || []),
+    ...(summary?.data?.persistence_rules || []),
+    ...(summary?.data?.consistency_rules || []),
+    ...(storySignals?.data_entities || []),
+    ...(storySignals?.qa_signals?.database || []),
+  ]);
+}
+
+function collectReliability(summary = {}, storySignals = {}) {
+  return unique([
+    ...(summary?.testing?.failure_modes || []),
+    ...(summary?.testing?.reliability_risks || []),
+    ...(summary?.operations?.constraints || []),
+    ...(storySignals?.constraints || []),
+    ...(storySignals?.qa_signals?.reliability || []),
+  ]);
+}
+
+function collectSecurity(summary = {}, storySignals = {}) {
+  return unique([
+    ...(summary?.security?.controls || []),
+    ...(summary?.security?.risks || []),
+    ...(storySignals?.qa_signals?.security || []),
+  ]);
+}
+
+function collectUnknowns(summary = {}, storySignals = {}) {
+  return unique([
+    ...(summary?.testing?.open_questions || []),
+    ...(storySignals?.unknowns || []),
+  ]);
 }
 
 export function renderStoryExecutiveSummary(summary = {}, storySignals = {}) {
-  const parts = [];
-
   const systemType = normalizeText(summary?.system_identity?.system_type || "");
   const domain = normalizeText(summary?.system_identity?.domain || "");
-  const actors = limit(summary?.actors || [], 4);
-  const capabilities = limit(summary?.capabilities || [], 5);
-  const primary = limit(summary?.workflows?.primary || [], 5);
-  const secondary = limit(summary?.workflows?.secondary || [], 4);
-
-  const explicitAction = normalizeText(
-    storySignals?.intent?.action_phrase || "",
-  );
-  const explicitBenefit = normalizeText(
-    storySignals?.intent?.benefit_phrase || "",
-  );
-
-  if (systemType || domain) {
-    parts.push(
-      `This user story appears to describe ${
-        systemType || "a software workflow"
-      }${domain ? ` in ${domain}` : ""}.`,
-    );
-  }
-
-  if (explicitAction) {
-    parts.push(
-      `The explicit user intent is to ${explicitAction}${
-        explicitBenefit ? ` so that ${explicitBenefit}` : ""
-      }.`,
-    );
-  }
-
-  if (actors.length > 0) {
-    parts.push(`The main actors appear to be ${joinList(actors)}.`);
-  }
-
-  if (capabilities.length > 0) {
-    parts.push(
-      `Based on the story, the likely functional scope includes ${joinList(
-        capabilities,
-      )}.`,
-    );
-  }
-
-  if (primary.length > 0) {
-    parts.push(
-      `The inferred workflow likely follows ${humanizeFlow(primary)}.`,
-    );
-  }
-
-  if (secondary.length > 0) {
-    parts.push(`Supporting behaviors may include ${joinList(secondary)}.`);
-  }
-
-  return parts.join(" ").replace(/\s+/g, " ").trim();
-}
-
-export function renderStoryQaSummary(summary = {}, storySignals = {}) {
-  const sections = [];
-
   const explicitActor = normalizeText(storySignals?.intent?.actor_phrase || "");
   const explicitAction = normalizeText(
     storySignals?.intent?.action_phrase || "",
@@ -97,65 +100,74 @@ export function renderStoryQaSummary(summary = {}, storySignals = {}) {
   const explicitBenefit = normalizeText(
     storySignals?.intent?.benefit_phrase || "",
   );
+  const actors = limit(summary?.actors || storySignals?.actors || [], 4);
 
-  const actors = limit(summary?.actors || [], 5);
-  const primary = limit(summary?.workflows?.primary || [], 8);
-  const secondary = limit(summary?.workflows?.secondary || [], 5);
-  const flowRiskMap = limit(summary?.testing?.flow_risk_map || [], 6);
-  const focusAreas = limit(summary?.testing?.focus_areas || [], 6);
-  const openQuestions = limit(summary?.testing?.open_questions || [], 5);
-  const constraints = limit(summary?.operations?.constraints || [], 5);
+  const lines = [];
 
-  sections.push("Story understanding:");
+  if (systemType || domain) {
+    lines.push(
+      `This story describes ${systemType || "a system workflow"}${
+        domain ? ` in ${domain}` : ""
+      }.`,
+    );
+  }
 
-  if (explicitActor || explicitAction || explicitBenefit) {
-    sections.push(
-      `Explicit in story: ${[
-        explicitActor ? `actor: ${explicitActor}` : "",
-        explicitAction ? `intent: ${explicitAction}` : "",
-        explicitBenefit ? `benefit: ${explicitBenefit}` : "",
+  if (explicitActor || explicitAction) {
+    lines.push(
+      `Primary user intent: ${[
+        explicitActor ? `${explicitActor}` : "",
+        explicitAction ? `wants to ${explicitAction}` : "",
+        explicitBenefit ? `so that ${explicitBenefit}` : "",
       ]
         .filter(Boolean)
-        .join(" | ")}`,
+        .join(" ")}.`,
     );
   }
 
   if (actors.length > 0) {
-    sections.push(`Detected actors: ${joinList(actors)}`);
+    lines.push(`Key actors: ${joinList(actors)}.`);
   }
 
-  if (primary.length > 0) {
-    sections.push(`Inferred core flow: ${humanizeFlow(primary)}`);
+  const functional = limit(collectFunctional(summary, storySignals), 4);
+  if (functional.length > 0) {
+    lines.push(`Main functional scope: ${joinList(functional)}.`);
   }
 
-  if (secondary.length > 0) {
-    sections.push(`Inferred supporting flow: ${joinList(secondary)}`);
-  }
+  return lines.join(" ").replace(/\s+/g, " ").trim();
+}
 
-  if (constraints.length > 0) {
-    sections.push(`Known constraints or controls: ${joinList(constraints)}`);
-  }
+export function renderStoryQaSummary(summary = {}, storySignals = {}) {
+  const functional = collectFunctional(summary, storySignals);
+  const integration = collectIntegration(summary, storySignals);
+  const database = collectDatabase(summary, storySignals);
+  const reliability = collectReliability(summary, storySignals);
+  const security = collectSecurity(summary, storySignals);
+  const unknowns = collectUnknowns(summary, storySignals);
 
-  if (flowRiskMap.length > 0) {
-    const reasoning = flowRiskMap.map(
-      (x) =>
-        `- ${normalizeText(x.flow)}: risk = ${normalizeText(
-          x.risk,
-        )}; test focus = ${normalizeText(x.test)}`,
-    );
-    sections.push(`QA reasoning:\n${reasoning.join("\n")}`);
-  }
+  const sections = [];
 
-  if (focusAreas.length > 0) {
-    sections.push(`Priority QA focus: ${joinList(focusAreas)}`);
-  }
+  sections.push("QA planning summary");
 
-  if (openQuestions.length > 0) {
-    sections.push(`What remains unclear: ${joinList(openQuestions)}`);
-  }
+  const functionalBlock = sectionBlock("Functional", functional);
+  if (functionalBlock) sections.push(functionalBlock);
+
+  const integrationBlock = sectionBlock("Integration", integration);
+  if (integrationBlock) sections.push(integrationBlock);
+
+  const databaseBlock = sectionBlock("Database", database);
+  if (databaseBlock) sections.push(databaseBlock);
+
+  const reliabilityBlock = sectionBlock("Reliability", reliability);
+  if (reliabilityBlock) sections.push(reliabilityBlock);
+
+  const securityBlock = sectionBlock("Security", security);
+  if (securityBlock) sections.push(securityBlock);
+
+  const unknownsBlock = sectionBlock("Needs clarification", unknowns);
+  if (unknownsBlock) sections.push(unknownsBlock);
 
   sections.push(
-    "Note: parts of this understanding are inferred from the story because user stories often omit full workflow and edge-case detail.",
+    "Note: this summary combines explicit story details with supporting evidence from PRD, comments, acceptance criteria, and available system context. Areas listed under 'Needs clarification' should not be over-inferred during test generation.",
   );
 
   return sections.join("\n\n");

@@ -3,7 +3,7 @@ import { Queue, QueueEvents } from "bullmq";
 export const GENERATION_QUEUE_NAME = "generation-queue";
 
 const connection = {
-  url: process.env.REDIS_URL || "redis://127.0.0.1:6379",
+  url: process.env.REDIS_URL || "redis://127.0.0.1:6380",
 };
 
 export const generationQueue = new Queue(GENERATION_QUEUE_NAME, {

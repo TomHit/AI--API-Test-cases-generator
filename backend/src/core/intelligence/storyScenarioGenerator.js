@@ -12,6 +12,12 @@ function uniqueBy(items = [], getKey = (x) => x?.id) {
   return out;
 }
 
+function normalizeText(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function makeScenario(id, category, title, objective, priority = "medium") {
   return {
     id,
@@ -22,146 +28,115 @@ function makeScenario(id, category, title, objective, priority = "medium") {
   };
 }
 
-function buildFlowScenarios(summary = {}) {
-  const flows = summary?.workflows?.primary || [];
-  const out = [];
+function buildFunctionalScenarios(summary = {}, signals = {}) {
+  const items = [
+    ...(summary?.qa_planning_summary?.functional?.flows || []),
+    ...(summary?.qa_planning_summary?.functional?.scope || []),
+    ...(signals?.qa_signals?.functional || []),
+  ]
+    .map(normalizeText)
+    .filter(Boolean);
 
-  if (flows.includes("initiation")) {
-    out.push(
-      makeScenario(
-        "STORY-FUNC-001",
-        "functional",
-        "Initiate primary story workflow successfully",
-        "Verify the main user journey can be initiated with valid input.",
-        "high",
-      ),
-    );
-  }
-
-  if (flows.includes("validation")) {
-    out.push(
-      makeScenario(
-        "STORY-VAL-001",
-        "validation",
-        "Reject invalid or incomplete input",
-        "Verify required fields, schema rules, and invalid combinations are rejected correctly.",
-        "high",
-      ),
-    );
-  }
-
-  if (flows.includes("authorization") || flows.includes("authentication")) {
-    out.push(
-      makeScenario(
-        "STORY-AUTH-001",
-        "security",
-        "Block unauthorized access to protected story action",
-        "Verify authentication and authorization checks are enforced before execution.",
-        "high",
-      ),
-    );
-  }
-
-  if (flows.includes("response")) {
-    out.push(
-      makeScenario(
-        "STORY-FUNC-002",
-        "functional",
-        "Return correct success and failure response states",
-        "Verify response payload, status mapping, and client-visible outcomes are correct.",
-        "high",
-      ),
-    );
-  }
-
-  if (flows.includes("settlement")) {
-    out.push(
-      makeScenario(
-        "STORY-FUNC-003",
-        "functional",
-        "Verify downstream settlement or reconciliation behavior",
-        "Validate settlement handling and financial reconciliation outcomes.",
-        "high",
-      ),
-    );
-  }
-
-  return out;
-}
-
-function buildRiskScenarios(summary = {}) {
-  const risks = summary?.testing?.focus_areas || [];
-  const out = [];
-
-  if (risks.includes("duplicate transaction risk")) {
-    out.push(
-      makeScenario(
-        "STORY-NEG-001",
-        "negative",
-        "Prevent duplicate transaction execution",
-        "Verify duplicate or repeated requests do not execute the same transaction twice.",
-        "high",
-      ),
-    );
-  }
-
-  if (risks.includes("idempotency failure")) {
-    out.push(
-      makeScenario(
-        "STORY-NEG-002",
-        "negative",
-        "Enforce idempotency for repeated requests",
-        "Verify retried requests are handled safely and idempotently.",
-        "high",
-      ),
-    );
-  }
-
-  if (risks.includes("notification delivery inconsistency")) {
-    out.push(
-      makeScenario(
-        "STORY-EDGE-001",
-        "edge",
-        "Verify notification trigger and delivery consistency",
-        "Validate that downstream notifications are sent correctly and only when expected.",
-        "medium",
-      ),
-    );
-  }
-
-  if (risks.includes("refund accuracy issues")) {
-    out.push(
-      makeScenario(
-        "STORY-FUNC-004",
-        "functional",
-        "Validate refund accuracy and reversal handling",
-        "Verify refund values, states, and reversal outcomes remain consistent.",
-        "high",
-      ),
-    );
-  }
-
-  return out;
-}
-
-function buildOpenQuestionScenarios(summary = {}) {
-  const questions = summary?.testing?.open_questions || [];
-  return questions.map((q, index) =>
+  return items.map((item, index) =>
     makeScenario(
-      `STORY-CLARIFY-${String(index + 1).padStart(3, "0")}`,
-      "clarification",
-      `Clarify: ${q}`,
-      `This scenario cannot be finalized until the story clarifies: ${q}.`,
-      "medium",
+      `STORY-FUNC-${String(index + 1).padStart(3, "0")}`,
+      "functional",
+      `Validate functional behavior: ${item}`,
+      `Verify the story supports the functional behavior '${item}' correctly under expected business flow conditions.`,
+      "high",
+    ),
+  );
+}
+
+function buildIntegrationScenarios(summary = {}, signals = {}) {
+  const items = [
+    ...(summary?.qa_planning_summary?.integration?.interactions || []),
+    ...(summary?.qa_planning_summary?.integration?.dependencies || []),
+    ...(signals?.qa_signals?.integration || []),
+  ]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  return items.map((item, index) =>
+    makeScenario(
+      `STORY-INT-${String(index + 1).padStart(3, "0")}`,
+      "integration",
+      `Validate integration behavior: ${item}`,
+      `Verify the system interaction '${item}' works correctly across connected services and boundaries.`,
+      "high",
+    ),
+  );
+}
+
+function buildDatabaseScenarios(summary = {}, signals = {}) {
+  const items = [
+    ...(summary?.qa_planning_summary?.database?.persistence_rules || []),
+    ...(summary?.qa_planning_summary?.database?.consistency_rules || []),
+    ...(signals?.qa_signals?.database || []),
+  ]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  return items.map((item, index) =>
+    makeScenario(
+      `STORY-DB-${String(index + 1).padStart(3, "0")}`,
+      "database",
+      `Validate database behavior: ${item}`,
+      `Verify the persistence or consistency rule '${item}' is enforced correctly in storage and state transitions.`,
+      "high",
+    ),
+  );
+}
+
+function buildReliabilityScenarios(summary = {}, signals = {}) {
+  const items = [
+    ...(summary?.qa_planning_summary?.reliability?.failure_modes || []),
+    ...(summary?.qa_planning_summary?.reliability?.retry_behaviors || []),
+    ...(summary?.qa_planning_summary?.reliability?.async_behaviors || []),
+    ...(signals?.qa_signals?.reliability || []),
+  ]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  return items.map((item, index) =>
+    makeScenario(
+      `STORY-REL-${String(index + 1).padStart(3, "0")}`,
+      "reliability",
+      `Validate reliability behavior: ${item}`,
+      `Verify the system handles '${item}' safely under retries, delays, partial failures, or unstable conditions.`,
+      "high",
+    ),
+  );
+}
+
+function buildSecurityScenarios(summary = {}, signals = {}) {
+  const items = [
+    ...(summary?.qa_planning_summary?.security?.auth_controls || []),
+    ...(summary?.qa_planning_summary?.security?.sensitive_data || []),
+    ...(summary?.qa_planning_summary?.security?.abuse_risks || []),
+    ...(signals?.qa_signals?.security || []),
+  ]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  return items.map((item, index) =>
+    makeScenario(
+      `STORY-SEC-${String(index + 1).padStart(3, "0")}`,
+      "security",
+      `Validate security behavior: ${item}`,
+      `Verify the system protects against the security risk or control area '${item}' appropriately.`,
+      "high",
     ),
   );
 }
 
 export function generateStoryTestScenarios(summary = {}, signals = {}) {
   const scenarios = [
-    ...buildFlowScenarios(summary, signals),
-    ...buildRiskScenarios(summary, signals),
-    ...buildOpenQuestionScenarios(summary, signals),
+    ...buildFunctionalScenarios(summary, signals),
+    ...buildIntegrationScenarios(summary, signals),
+    ...buildDatabaseScenarios(summary, signals),
+    ...buildReliabilityScenarios(summary, signals),
+    ...buildSecurityScenarios(summary, signals),
   ];
 
   return uniqueBy(scenarios, (x) => x.id);

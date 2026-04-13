@@ -339,6 +339,37 @@ export function buildCanonicalSummary({ baseAnalysis = {}, docSignals = {} }) {
     (docSignals?.risks || []).map((x) => humanizeRisk(x?.name)),
     10,
   );
+  if (!schema.testing.focus_areas.length) {
+    schema.testing.focus_areas = uniqueCleanList(schema.workflows.primary, 5);
+  }
+
+  // ==========================
+  // QA SIGNALS (CORE ADDITION)
+  // ==========================
+  const qaSignals = docSignals?.qa_signals || {};
+
+  schema.testing.qa_signals = {
+    functional: uniqueCleanList(qaSignals.functional || [], 10),
+    integration: uniqueCleanList(qaSignals.integration || [], 10),
+    database: uniqueCleanList(qaSignals.database || [], 10),
+    reliability: uniqueCleanList(qaSignals.reliability || [], 10),
+    security: uniqueCleanList(qaSignals.security || [], 10),
+  };
+
+  // fallback enrichment if doc is weak
+  if (!schema.testing.qa_signals.functional.length) {
+    schema.testing.qa_signals.functional = uniqueCleanList(
+      schema.workflows.primary,
+      5,
+    );
+  }
+
+  if (!schema.testing.qa_signals.integration.length) {
+    schema.testing.qa_signals.integration = uniqueCleanList(
+      schema.workflows.secondary,
+      5,
+    );
+  }
 
   schema.testing.failure_scenarios = uniqueCleanList(
     (docSignals?.edge_cases || [])

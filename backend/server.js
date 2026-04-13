@@ -26,7 +26,6 @@ import {
   listAllProjects,
 } from "./src/repositories/projectsRepo.js";
 import { enqueueGenerationJob } from "./src/jobs/generationQueue.js";
-import "./src/workers/generationWorkerProcess.js";
 
 function sendSuccess(res, data = {}, status = 200) {
   return res.status(status).json({

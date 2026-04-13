@@ -5,6 +5,50 @@ function normalizePhrase(value = "") {
     .replace(/\s+/g, " ")
     .trim();
 }
+function buildQaPlanningSummary(summary = {}, signals = {}) {
+  const functional = [
+    ...(summary?.workflows?.primary || []),
+    ...(summary?.workflows?.secondary || []),
+    ...(summary?.capabilities || []),
+    ...(signals?.qa_signals?.functional || []),
+  ];
+
+  const integration = [
+    ...(signals?.systems || []),
+    ...(signals?.qa_signals?.integration || []),
+  ];
+
+  const database = [
+    ...(signals?.data_entities || []),
+    ...(signals?.qa_signals?.database || []),
+  ];
+
+  const reliability = [
+    ...(summary?.operations?.constraints || []),
+    ...(signals?.constraints || []),
+    ...(signals?.qa_signals?.reliability || []),
+  ];
+
+  const security = [
+    ...(summary?.security_compliance?.auth || []),
+    ...(summary?.security_compliance?.data_protection || []),
+    ...(signals?.qa_signals?.security || []),
+  ];
+
+  const unknowns = [
+    ...(summary?.testing?.open_questions || []),
+    ...(signals?.unknowns || []),
+  ];
+
+  return {
+    functional,
+    integration,
+    database,
+    reliability,
+    security,
+    unknowns,
+  };
+}
 
 function sentenceJoin(items = [], conjunction = "and") {
   const filtered = (items || [])
@@ -173,41 +217,29 @@ export function buildExecutiveSummary(summary = {}) {
   return parts.join(" ");
 }
 
-export function buildQASummary(summary = {}) {
-  const lines = [
-    `Purpose: ${normalizePhrase(summary?.system_identity?.system_type || "Unknown system")} | domain: ${normalizePhrase(summary?.system_identity?.domain || "Unknown domain")}`,
-    summary?.actors?.length
-      ? `Actors: ${sentenceJoin(limitList(summary.actors, 5))}`
-      : "",
-    summary?.capabilities?.length
-      ? `Capabilities: ${sentenceJoin(limitList(summary.capabilities, 8))}`
-      : "",
-    summary?.workflows?.primary?.length
-      ? `Primary workflow: ${limitList(summary.workflows.primary, 6)
-          .map(normalizePhrase)
-          .join(" → ")}`
-      : "",
-    summary?.workflows?.secondary?.length
-      ? `Secondary workflow: ${sentenceJoin(limitList(summary.workflows.secondary, 6))}`
-      : "",
-    summary?.security_compliance?.compliance?.length
-      ? `Compliance: ${sentenceJoin(limitList(summary.security_compliance.compliance, 6))}`
-      : "",
-    summary?.operations?.non_functionals?.length
-      ? `Non-functional priorities: ${sentenceJoin(limitList(summary.operations.non_functionals, 5))}`
-      : "",
-    summary?.testing?.focus_areas?.length
-      ? `Testing focus: ${sentenceJoin(limitList(summary.testing.focus_areas, 6))}`
-      : "",
-    summary?.testing?.failure_scenarios?.length
-      ? `Failure scenarios: ${sentenceJoin(limitList(summary.testing.failure_scenarios, 5))}`
-      : "",
-    summary?.testing?.open_questions?.length
-      ? `Open questions: ${sentenceJoin(limitList(summary.testing.open_questions, 5))}`
-      : "",
+export function buildQASummary(summary = {}, signals = {}) {
+  const qa = buildQaPlanningSummary(summary, signals);
+
+  function section(title, items) {
+    const list = limitList(items, 8);
+    if (!list.length) return "";
+    return `${title}:\n${list.map((x) => `- ${normalizePhrase(x)}`).join("\n")}`;
+  }
+
+  const parts = [
+    "QA Planning Summary",
+
+    section("Functional", qa.functional),
+    section("Integration", qa.integration),
+    section("Database", qa.database),
+    section("Reliability", qa.reliability),
+    section("Security", qa.security),
+    section("Needs clarification", qa.unknowns),
+
+    "Note: This summary combines story, PRD, and inferred signals. Unknowns should not be assumed during test generation.",
   ].filter(Boolean);
 
-  return lines.join("\n");
+  return parts.join("\n\n");
 }
 
 export function buildProjectSummary(summary = {}) {

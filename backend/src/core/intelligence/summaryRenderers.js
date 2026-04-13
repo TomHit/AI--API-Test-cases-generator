@@ -119,6 +119,13 @@ export function renderExecutiveSummary(schema = {}) {
 
 export function renderQaSummary(schema = {}) {
   const sections = [];
+  const qaSignals = schema?.testing?.qa_signals || {};
+
+  const functional = limit(qaSignals.functional || [], 5);
+  const integration = limit(qaSignals.integration || [], 5);
+  const database = limit(qaSignals.database || [], 5);
+  const reliability = limit(qaSignals.reliability || [], 5);
+  const security = limit(qaSignals.security || [], 5);
 
   const systemType = schema?.system_identity?.system_type;
   const domain = schema?.system_identity?.domain;
@@ -165,7 +172,40 @@ export function renderQaSummary(schema = {}) {
     );
   }
 
-  // 5. Risk reasoning (CORE UPGRADE)
+  // 5. QA classification (NEW — CORE INTELLIGENCE)
+  if (
+    functional.length ||
+    integration.length ||
+    database.length ||
+    reliability.length ||
+    security.length
+  ) {
+    const qaBlocks = [];
+
+    if (functional.length) {
+      qaBlocks.push(`Functional: ${joinList(functional)}`);
+    }
+
+    if (integration.length) {
+      qaBlocks.push(`Integration: ${joinList(integration)}`);
+    }
+
+    if (database.length) {
+      qaBlocks.push(`Database: ${joinList(database)}`);
+    }
+
+    if (reliability.length) {
+      qaBlocks.push(`Reliability: ${joinList(reliability)}`);
+    }
+
+    if (security.length) {
+      qaBlocks.push(`Security: ${joinList(security)}`);
+    }
+
+    sections.push(`QA coverage areas:\n${qaBlocks.join("\n")}`);
+  }
+
+  // 6. Risk reasoning (CORE UPGRADE)
   if (flowRiskMap.length > 0) {
     const reasoning = flowRiskMap.slice(0, 5).map((x) => {
       const flow = String(x.flow || "").toLowerCase();
@@ -197,7 +237,7 @@ export function renderQaSummary(schema = {}) {
     sections.push(`Risk reasoning:\n${reasoning.join("\n")}`);
   }
 
-  // 6. Testing perspective (smarter)
+  // 7. Testing perspective (smarter)
   if (focusAreas.length > 0) {
     sections.push(
       `Testing perspective:\nTesting should prioritize ${joinList(

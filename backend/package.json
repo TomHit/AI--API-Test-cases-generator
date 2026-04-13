@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "node --max-old-space-size=4096 server.js"
+    "dev": "node --max-old-space-size=4096 server.js",
+    "worker": "node src/workers/generationWorkerProcess.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",

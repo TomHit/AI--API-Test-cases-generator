@@ -6,6 +6,7 @@ const ADVANCED_QA_TEST_TYPES = [
   "integration",
   "database",
   "reliability",
+  "security",
 ];
 
 const DEFAULT_FORM_OPTIONS = {
@@ -24,6 +25,7 @@ const DEFAULT_FORM_OPTIONS = {
     "integration",
     "database",
     "reliability",
+    "security",
   ],
 };
 
@@ -141,6 +143,7 @@ export default function GenerationOptions({ options, onChange }) {
         "integration",
         "database",
         "reliability",
+        "security",
       ],
       generation_mode: "balanced",
     }));
