@@ -152,7 +152,7 @@ export default function WorkspacePlaceholderPage() {
     }
   }
 
-  function getPageTitle() {
+  /*function getPageTitle() {
     switch (activeNav) {
       case "projects":
         return "Projects";
@@ -173,7 +173,7 @@ export default function WorkspacePlaceholderPage() {
       default:
         return "Workspace";
     }
-  }
+  }*/
 
   return (
     <div
